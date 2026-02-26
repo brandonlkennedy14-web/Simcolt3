@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>sim3colts - 7x7 Autonomous Emergence</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+        // --- 1. CLOUD STORAGE (FIREBASE/FIRESTORE) SETUP ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            apiKey: "mock", projectId: "mock", appId: "mock"
+        };
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        
+        const appId = typeof __app_id !== 'undefined' ? __app_id.split('/')[0] : 'default-app-id';
+        let museumUnsubscribe = null;
+
+        // --- AUTHENTICATION FLOW ---
+        const initAuth = async () => {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (err) {
+                console.error("Auth init failed:", err);
+            }
+        };
+
+        initAuth().then(() => {
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    loadMuseum(user.uid);
+                } else if (museumUnsubscribe) {
+                    museumUnsubscribe();
+                    museumUnsubscribe = null;
+                }
+            });
+        });
+
+        // --- 2. SIMULATION CONSTANTS & UI ---
+        const simCanvas = document.getElementById('sim-canvas');
+        const sCtx = simCanvas.getContext('2d');
+        const ruliadCanvas = document.getElementById('ruliad-canvas');
+        const rCtx = ruliadCanvas.getContext('2d');
+        
+        const CANVAS_SIZE = 500;
+        const CENTER = CANVAS_SIZE / 2;
+        const CHUNK_SIZE = 500; 
+        const ZETA_VOID_LIMIT = 2000; 
+
+        let isRunning = false;
+        let animationId = null;
+        let ticks = 0;
+        let inversions = 0;
+        let chaosRatio = 0.0;
+        let knownHashes = new Set();
+        let currentConfigHash = "";
+
+        // The 7 Base Colors for the Munker Illusion & Ruliad
+        const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#4f46e5', '#a855f7'];
+
+        let bounds = { minX: -50, maxX: 50, minY: -50, maxY: 50 };
+        const MAX_BOUNDS = 240;
+
+        // --- GLOBAL PATTERN GENERATION FOR TRUE MUNKER-WHITE ---
+        const ST_H = 3; // Stripe Height (3px per color = 21px repeating block)
+        let bgPattern, fgPatterns = [];
+
+        function initPatterns() {
+            // Background Pattern (All 7 colors)
+            let bgCanv = document.createElement('canvas');
+            bgCanv.width = 1; bgCanv.height = ST_H * 7;
+            let bCtx = bgCanv.getContext('2d');
+            colors.forEach((c, i) => {
+                bCtx.fillStyle = c;
+                bCtx.fillRect(0, i * ST_H, 1, ST_H);
+            });
+            bgPattern = sCtx.createPattern(bgCanv, 'repeat');
+
+            // Foreground Patterns (7 individual isolated stripes for the overlays)
+            fgPatterns = colors.map((c, i) => {
+                let fgCanv = document.createElement('canvas');
+                fgCanv.width = 1; fgCanv.height = ST_H * 7;
+                let fCtx = fgCanv.getContext('2d');
+                fCtx.fillStyle = c;
+                fCtx.fillRect(0, i * ST_H, 1, ST_H);
+                return sCtx.createPattern(fgCanv, 'repeat');
+            });
+        }
+        initPatterns();
+
+        // --- 3. PHYSICS & LOGIC ENTITIES ---
+        class Ball {
+            constructor(groupId, isShadow = false) {
+                this.groupId = groupId;
+                this.color = colors[groupId];
+                this.isShadow = isShadow;
+                
+                // Randomly assign Smith or Blade logic
+                this.type = Math.random() > 0.5 ? 'smith' : 'blade';
+                
+                this.reset();
+            }
+
+            reset(perturbation = 0) {
+                // Start clustered near center to force initial exclusion chaos
+                this.x = (Math.random() * 40 - 20);
+                this.y = (Math.random() * 40 - 20);
+                
+                let angle = Math.random() * Math.PI * 2;
+                let speed = this.type === 'blade' ? 1.8 : 0.9; 
+                
+                this.vx = Math.cos(angle) * speed + perturbation;
+                this.vy = Math.sin(angle) * speed + perturbation;
+                
+                this.winding = 0; // Starts with ZERO memory
+                this.ticksSinceHit = 0;
+                this.path = [];
+            }
+
+            update(shadowBall) {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.ticksSinceHit++;
+
+                if (!this.isShadow && shadowBall) {
+                    let dx = this.x - shadowBall.x;
+                    let dy = this.y - shadowBall.y;
+                    let divergence = Math.sqrt(dx*dx + dy*dy);
+                    chaosRatio = (chaosRatio * 0.999) + (divergence * 0.001); 
+                }
+
+                if (!this.isShadow && ticks % 10 === 0) {
+                    this.path.push({x: this.x, y: this.y});
+                    if (this.path.length > 20) this.path.shift(); // Shorter tail for performance
+                }
+
+                let angle = Math.atan2(this.y, this.x);
+                if (this.lastAngle !== undefined) {
+                    let dAngle = angle - this.lastAngle;
+                    if (dAngle > Math.PI) dAngle -= 2 * Math.PI;
+                    if (dAngle < -Math.PI) dAngle += 2 * Math.PI;
+                    this.winding += dAngle / (2 * Math.PI);
+                }
+                this.lastAngle = angle;
+
+                this.checkBoundaries();
+                this.checkZetaVoid();
+            }
+
+            checkBoundaries() {
+                let hit = false;
+                if (this.x < bounds.minX || this.x > bounds.maxX) {
+                    // Blades expand slowly
+                    if (this.type === 'blade') bounds.minX -= 0.02, bounds.maxX += 0.02;
+                    this.vx *= -1;
+                    this.x = this.x < bounds.minX ? bounds.minX : bounds.maxX;
+                    hit = true;
+                }
+                if (this.y < bounds.minY || this.y > bounds.maxY) {
+                    if (this.type === 'blade') bounds.minY -= 0.02, bounds.maxY += 0.02; 
+                    this.vy *= -1;
+                    this.y = this.y < bounds.minY ? bounds.minY : bounds.maxY;
+                    hit = true;
+                }
+                if (hit) this.ticksSinceHit = 0;
+            }
+
+            checkZetaVoid() {
+                if (this.ticksSinceHit > ZETA_VOID_LIMIT) {
+                    document.getElementById('log').innerHTML = `<span class="text-xs text-yellow-500 block">Zeta Fold: Group ${this.groupId} ${this.type}</span>` + document.getElementById('log').innerHTML.slice(0, 500);
+                    this.x *= 0.1; 
+                    this.y *= 0.1;
+                    this.vx *= -1;
+                    this.vy *= -1;
+                    this.ticksSinceHit = 0;
+                }
+            }
+        }
+
+        let balls = [];
+        let shadowBalls = [];
+
+        function generateHash() {
+            let str = balls.map(b => `${b.type}_${b.vx.toFixed(1)}_${b.vy.toFixed(1)}`).join('|');
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) hash = Math.imul(31, hash) + str.charCodeAt(i) | 0;
+            return Math.abs(hash).toString(16);
+        }
+
+        function initBalls() {
+            balls = [];
+            shadowBalls = [];
+            
+            // 7 GROUPS OF 7 (49 Balls Total)
+            for (let g = 0; g < 7; g++) {
+                for (let i = 0; i < 7; i++) {
+                    let b = new Ball(g, false);
+                    balls.push(b);
+                    
+                    let shadow = new Ball(g, true);
+                    shadow.x = b.x; shadow.y = b.y;
+                    shadow.vx = b.vx + 1e-7; shadow.vy = b.vy + 1e-7;
+                    shadow.type = b.type;
+                    shadowBalls.push(shadow);
+                }
+            }
+            
+            currentConfigHash = generateHash();
+            if (knownHashes.has(currentConfigHash)) {
+                initBalls(); 
+            }
+        }
+
+        // --- 4. EXCLUSION & MEMORY REMAPPING ---
+        function applyExclusionPrinciple() {
+            for (let i = 0; i < balls.length; i++) {
+                for (let j = i + 1; j < balls.length; j++) {
+                    let dx = balls[i].x - balls[j].x;
+                    let dy = balls[i].y - balls[j].y;
+                    let distSq = dx*dx + dy*dy;
+                    
+                    if (distSq < 9) { // Collision Radius
+                        let b1 = balls[i]; let b2 = balls[j];
+                        
+                        // ZERO MEMORY = FULL CHAOS
+                        // If they haven't gathered enough winding number, violently explode
+                        if (Math.abs(b1.winding) < 0.1) {
+                            b1.vx = (Math.random() - 0.5) * 12;
+                            b1.vy = (Math.random() - 0.5) * 12;
+                        }
+                        if (Math.abs(b2.winding) < 0.1) {
+                            b2.vx = (Math.random() - 0.5) * 12;
+                            b2.vy = (Math.random() - 0.5) * 12;
+                        }
+
+                        // Structured memory deflection 
+                        if (Math.abs(b1.winding) > Math.abs(b2.winding)) {
+                            b2.vx *= -1.05; b2.vy *= -1.05; // Lesser memory deflected
+                        } else {
+                            b1.vx *= -1.05; b1.vy *= -1.05;
+                        }
+                    }
+                }
+            }
+        }
+
+        function checkInversion() {
+            if (bounds.maxX - bounds.minX > MAX_BOUNDS * 2) {
+                inversions++;
+                bounds = { minX: -20, maxX: 20, minY: -20, maxY: 20 };
+                balls.forEach(b => {
+                    b.x *= 0.1; b.y *= 0.1; 
+                    b.vx *= -1; b.vy *= -1; 
+                });
+                document.getElementById('log').innerHTML = `<span class="text-xs text-purple-400 block font-bold">Inversion ${inversions} Map Collapsed!</span>` + document.getElementById('log').innerHTML.slice(0, 500);
+            }
+        }
+
+        // --- 5. VISUALIZERS (SIDE-BY-SIDE) ---
+        
+        function drawRuliad() {
+            // Hyper Brain Graph: Deep space fade
+            rCtx.fillStyle = 'rgba(15, 23, 42, 0.15)'; 
+            rCtx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+            
+            rCtx.strokeStyle = 'rgba(71, 85, 105, 0.3)';
+            rCtx.lineWidth = 1;
+            rCtx.strokeRect(CENTER + bounds.minX, CENTER + bounds.minY, bounds.maxX - bounds.minX, bounds.maxY - bounds.minY);
+
+            rCtx.lineWidth = 1.2;
+            let maxDist = (bounds.maxX - bounds.minX) * 0.25; 
+            
+            for (let i = 0; i < balls.length; i++) {
+                for (let j = i + 1; j < balls.length; j++) {
+                    let dx = balls[i].x - balls[j].x;
+                    let dy = balls[i].y - balls[j].y;
+                    if (Math.abs(dx) > maxDist || Math.abs(dy) > maxDist) continue;
+
+                    let dist = Math.sqrt(dx*dx + dy*dy);
+                    
+                    if (dist < maxDist) {
+                        rCtx.beginPath();
+                        rCtx.moveTo(CENTER + balls[i].x, CENTER + balls[i].y);
+                        
+                        let cp1x = CENTER + balls[i].x + (balls[i].vx * 5);
+                        let cp1y = CENTER + balls[i].y + (balls[i].vy * 5);
+                        let cp2x = CENTER + balls[j].x - (balls[j].vx * 5);
+                        let cp2y = CENTER + balls[j].y - (balls[j].vy * 5);
+                        
+                        rCtx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, CENTER + balls[j].x, CENTER + balls[j].y);
+                        
+                        let opacity = (1 - dist / maxDist) * 0.8;
+                        
+                        let grad = rCtx.createLinearGradient(CENTER + balls[i].x, CENTER + balls[i].y, CENTER + balls[j].x, CENTER + balls[j].y);
+                        grad.addColorStop(0, balls[i].color + Math.floor(opacity*255).toString(16).padStart(2,'0'));
+                        grad.addColorStop(1, balls[j].color + Math.floor(opacity*255).toString(16).padStart(2,'0'));
+                        
+                        rCtx.strokeStyle = grad;
+                        rCtx.stroke();
+                    }
+                }
+                
+                let gx = CENTER + balls[i].x;
+                let gy = CENTER + balls[i].y;
+                rCtx.fillStyle = balls[i].color; 
+                rCtx.beginPath();
+                rCtx.arc(gx, gy, balls[i].type === 'smith' ? 3 : 1.5, 0, Math.PI * 2);
+                rCtx.fill();
+            }
+        }
+
+        function drawPhysics() {
+            // Munker-White Physics Layer
+            sCtx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+            
+            // 1. GLOBAL BACKGROUND STRIPES
+            sCtx.fillStyle = bgPattern;
+            sCtx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+            
+            // Dynamic Boundaries
+            sCtx.strokeStyle = '#94a3b8';
+            sCtx.lineWidth = 2;
+            sCtx.strokeRect(CENTER + bounds.minX, CENTER + bounds.minY, bounds.maxX - bounds.minX, bounds.maxY - bounds.minY);
+
+            // Connect Ruliad lines to the Physics Canvas
+            sCtx.lineWidth = 1;
+            let maxDist = (bounds.maxX - bounds.minX) * 0.25; 
+            for (let i = 0; i < balls.length; i++) {
+                for (let j = i + 1; j < balls.length; j++) {
+                    let dx = balls[i].x - balls[j].x;
+                    let dy = balls[i].y - balls[j].y;
+                    if (Math.abs(dx) > maxDist || Math.abs(dy) > maxDist) continue;
+
+                    let dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist < maxDist) {
+                        sCtx.beginPath();
+                        sCtx.moveTo(CENTER + balls[i].x, CENTER + balls[i].y);
+                        let cp1x = CENTER + balls[i].x + (balls[i].vx * 5);
+                        let cp1y = CENTER + balls[i].y + (balls[i].vy * 5);
+                        let cp2x = CENTER + balls[j].x - (balls[j].vx * 5);
+                        let cp2y = CENTER + balls[j].y - (balls[j].vy * 5);
+                        sCtx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, CENTER + balls[j].x, CENTER + balls[j].y);
+                        
+                        sCtx.strokeStyle = '#94a3b8'; // Grey Base
+                        sCtx.stroke();
+                        sCtx.strokeStyle = fgPatterns[balls[i].groupId]; // Munker Tint Overlay
+                        sCtx.stroke();
+                    }
+                }
+            }
+
+            // Draw objects group by group to maintain illusion logic
+            for (let g = 0; g < 7; g++) {
+                let groupBalls = balls.filter(b => b.groupId === g);
+                
+                // Draw Trails with Illusion
+                groupBalls.forEach(b => {
+                    if (b.path.length > 0) {
+                        sCtx.beginPath();
+                        sCtx.moveTo(CENTER + b.path[0].x, CENTER + b.path[0].y);
+                        for (let i = 1; i < b.path.length; i++) {
+                            sCtx.lineTo(CENTER + b.path[i].x, CENTER + b.path[i].y);
+                        }
+                        sCtx.lineWidth = b.type === 'smith' ? 3 : 1; 
+                        
+                        sCtx.strokeStyle = '#94a3b8'; // Neutral Grey Trail
+                        sCtx.stroke();
+                        
+                        sCtx.strokeStyle = fgPatterns[g]; // Specific foreground stripe overlay
+                        sCtx.stroke();
+                    }
+                });
+
+                // Draw Balls with Illusion
+                groupBalls.forEach(b => {
+                    sCtx.beginPath();
+                    let radius = b.type === 'smith' ? 6 : 4;
+                    sCtx.arc(CENTER + b.x, CENTER + b.y, radius, 0, Math.PI * 2);
+                    
+                    sCtx.fillStyle = '#94a3b8'; // Neutral Grey Ball
+                    sCtx.fill();
+                    
+                    sCtx.fillStyle = fgPatterns[g]; // Specific foreground stripe overlay
+                    sCtx.fill();
+                });
+            }
+        }
+
+        // --- 6. AUTONOMOUS RUN LOOP ---
+        function processTick() {
+            balls.forEach((b, i) => b.update(shadowBalls[i]));
+            shadowBalls.forEach(b => b.update(null)); 
+            applyExclusionPrinciple();
+            checkInversion();
+            ticks++;
+        }
+
+        function runChunk() {
+            if (!isRunning) return;
+
+            let c = 0;
+            while (c < CHUNK_SIZE) { // INFINITE LOOP
+                processTick();
+                c++;
+            }
+
+            // Render both canvases side-by-side
+            drawRuliad();
+            drawPhysics();
+
+            // Structure detection logic (Museum saving)
+            if (ticks % 25000 === 0 && chaosRatio < 8.0 && !knownHashes.has(currentConfigHash)) {
+                saveStructureToMuseum();
+            }
+
+            // UI Updates
+            document.getElementById('stat-ticks').textContent = ticks.toLocaleString();
+            document.getElementById('stat-chaos').textContent = chaosRatio.toFixed(2);
+            document.getElementById('stat-inversions').textContent = inversions;
+            
+            let wAvg = balls.reduce((sum, b) => sum + Math.abs(b.winding), 0) / balls.length;
+            document.getElementById('stat-winding').textContent = wAvg.toFixed(2);
+
+            animationId = requestAnimationFrame(runChunk);
+        }
+
+        // --- 7. DATABASE SAVING ---
+        async function saveStructureToMuseum() {
+            const user = auth.currentUser;
+            if (!user) return;
+            
+            knownHashes.add(currentConfigHash);
+            
+            const structureData = {
+                hash: currentConfigHash,
+                chaosRatio: chaosRatio.toFixed(2),
+                inversions: inversions,
+                tickDetected: ticks,
+                timestamp: Date.now()
+            };
+
+            try {
+                const collectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'museum');
+                await setDoc(doc(collectionRef, currentConfigHash), structureData);
+                document.getElementById('log').innerHTML = `<span class="text-xs text-green-400 block">Structure Saved: ${currentConfigHash.substring(0,6)}</span>` + document.getElementById('log').innerHTML.slice(0, 500);
+            } catch (e) {
+                console.error("Museum save error:", e);
+    V        }
+        }
+
+        function loadMuseum(userId) {
+            if (museumUnsubscribe) museumUnsubscribe();
+            
+            const collectionRef = collection(db, 'artifacts', appId, 'users', userId, 'museum');
+            museumUnsubscribe = onSnapshot(collectionRef, (snapshot) => {
+                const list = document.getElementById('museum-list');
+                list.innerHTML = '';
+                snapshot.forEach(docSnap => {
+                    const data = docSnap.data();
+                    knownHashes.add(data.hash);
+                    list.innerHTML += `
+                        <div class="bg-slate-700 p-2 rounded text-xs border border-slate-600">
+                            <span class="text-blue-300 font-mono">${data.hash.substring(0,8)}</span><br>
+                            Chaos: ${data.chaosRatio} | Inv: ${data.inversions}
+                        </div>
+                    `;
+                });
+            }, (err) => {
+                console.error("Snapshot error:", err);
+                document.getElementById('museum-list').innerHTML = `<div class="text-xs text-red-500 italic text-center mt-4">Database sync failed.</div>`;
+            });
+        }
+
+        // --- INITIALIZE FIRE & FORGET ---
+        initBalls();
+        
+        // Start autonomous loop immediately
+        isRunning = true;
+        runChunk(); 
+
+    </script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen p-4 font-sans flex flex-col items-center overflow-x-hidden">
+    
+    <div class="w-full max-w-7xl mb-4 border-b border-slate-700 pb-4">
+        <h1 class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">sim3colts: Autonomous 7x7 Multi-View</h1>
+        <p class="text-slate-400 text-sm mt-1">49 Entities | Zero-Memory Chaos Remap | Infinite Ruliad Hyper-Graph</p>
+    </div>
+
+    <!-- MAIN SIDE-BY-SIDE VISUALIZER STAGE -->
+    <div class="w-full max-w-7xl flex flex-col xl:flex-row gap-6 mb-6">
+        
+        <!-- Left: Ruliad Hyper-Brain Canvas -->
+        <div class="flex-1 flex flex-col items-center">
+            <h2 class="text-slate-400 font-mono text-sm tracking-widest uppercase mb-2">Ruliad Hyper-Brain Graph</h2>
+            <div class="relative bg-slate-950 rounded-xl shadow-[0_0_30px_rgba(15,23,42,0.8)] border border-slate-700 overflow-hidden" style="width: 500px; height: 500px;">
+                <canvas id="ruliad-canvas" width="500" height="500"></canvas>
+            </div>
+        </div>
+
+        <!-- Right: Munker-White Physics Canvas -->
+        <div class="flex-1 flex flex-col items-center">
+            <h2 class="text-slate-400 font-mono text-sm tracking-widest uppercase mb-2">Munker-White Physics Layer</h2>
+            <div class="relative bg-slate-950 rounded-xl shadow-[0_0_30px_rgba(15,23,42,0.8)] border border-slate-700 overflow-hidden" style="width: 500px; height: 500px;">
+                <canvas id="sim-canvas" width="500" height="500"></canvas>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- HUD / STATS PANELS -->
+    <div class="w-full max-w-7xl flex flex-col lg:flex-row gap-6">
+        
+        <div class="flex-1 grid grid-cols-2 gap-3">
+            <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                <span class="block text-slate-400 text-xs uppercase tracking-wider mb-1">Infinite Compute Ticks</span>
+                <span id="stat-ticks" class="text-2xl font-mono text-green-400">0</span>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                <span class="block text-slate-400 text-xs uppercase tracking-wider mb-1">Chaos / Structure Ratio</span>
+                <span id="stat-chaos" class="text-2xl font-mono text-red-400">0.00</span>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                <span class="block text-slate-400 text-xs uppercase tracking-wider mb-1">Avg Winding Memory</span>
+                <span id="stat-winding" class="text-2xl font-mono text-blue-400">0.00</span>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                <span class="block text-slate-400 text-xs uppercase tracking-wider mb-1">Map Inversions</span>
+                <span id="stat-inversions" class="text-2xl font-mono text-purple-400">0</span>
+            </div>
+            
+            <!-- Autonomous Badge -->
+            <div class="col-span-2 bg-blue-900/20 border border-blue-500/30 p-4 rounded-lg text-center shadow-[0_0_15px_rgba(59,130,246,0.15)] relative overflow-hidden">
+                <div class="absolute inset-0 bg-gradient-to-r from-transparent via-blue-500/10 to-transparent -translate-x-full animate-[shimmer_2s_infinite]"></div>
+                <span class="text-blue-400 font-mono text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-3 relative z-10">
+                    <span class="w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_#60a5fa] animate-pulse"></span>
+                    Autonomous Core Active
+                    <span class="w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_#60a5fa] animate-pulse"></span>
+                </span>
+            </div>
+        </div>
+
+        <div class="w-full lg:w-1/3 flex flex-col gap-3">
+            <!-- Event Log -->
+            <div class="bg-slate-800 rounded-lg border border-slate-700 p-3 flex-1 flex flex-col h-[150px]">
+                <span class="block text-slate-400 text-xs uppercase tracking-wider mb-2 border-b border-slate-700 pb-1">Quantum Event Log</span>
+                <div id="log" class="flex-1 overflow-y-auto space-y-1 font-mono break-words"></div>
+            </div>
+
+            <!-- The Museum -->
+            <div class="bg-slate-800 rounded-lg border border-slate-700 p-3 flex-1 flex flex-col h-[150px]">
+                <span class="block text-slate-400 text-xs uppercase tracking-wider mb-2 border-b border-slate-700 pb-1 flex justify-between">
+                    <span>Structure Museum</span>
+                    <span class="text-[10px] text-green-500">Live DB Sync</span>
+                </span>
+                <div id="museum-list" class="flex-1 overflow-y-auto space-y-2 pr-2">
+                    <div class="text-xs text-slate-500 italic text-center mt-4">Awaiting stable structure...</div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</body>
+</html>
