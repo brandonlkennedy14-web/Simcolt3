@@ -76,8 +76,8 @@
 
     <script type="module">
         // --- 1. SUPABASE INTEGRATION ---
-        const SUPABASE_URL = 'https://xoolmbmnzbsvcqeyqvyi.supabase.co'; 
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhvb2xtYm1uemJzdmNxZXlxdnlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDMwNDQsImV4cCI6MjA4NzAxOTA0NH0.ebTwMZ_byU6EXtuR0jynct64QO5ornQrCwElQ5b9TxQ';
+        const SUPABASE_URL = 'https://jeddcrgchxvdihmxuxpr.supabase.co'; 
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImplZGRjcmdjaHh2ZGlobXh1eHByIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0MDQ4NjAsImV4cCI6MjA4Njk4MDg2MH0.WnCrWYXYsJPlxMj-RisMHBCveKUgI7HlBh0Peh1T6Vw';
 
         const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         let dbConnected = false;
@@ -259,7 +259,13 @@
             let str = balls.map(b => `${b.type}_${b.vx.toFixed(1)}_${b.vy.toFixed(1)}`).join('|');
             let hash = 0;
             for (let i = 0; i < str.length; i++) hash = Math.imul(31, hash) + str.charCodeAt(i) | 0;
-            return (simMode === 'discovery' ? 'Disc_' : currentGeoName + '_') + Math.abs(hash).toString(16);
+            
+            if (simMode === 'discovery') {
+                // Encode the current continuous boundary size to log self-generated evolution
+                let currentBoundSize = Math.floor(discoveryBounds.maxX - discoveryBounds.minX);
+                return `Disc_W${currentBoundSize}_${Math.abs(hash).toString(16)}`;
+            }
+            return `${currentGeoName}_${Math.abs(hash).toString(16)}`;
         }
 
         function initBalls() {
@@ -435,10 +441,20 @@
             
             draw();
             
-            // Log known yields silently
-            if (dbConnected && ticks % 30000 === 0 && chaosRatio < 8.0 && !knownHashes.has(currentConfigHash)) {
-                knownHashes.add(currentConfigHash);
-                supabase.from('museum').upsert({ hash: currentConfigHash, chaos_ratio: chaosRatio.toFixed(2), tick_detected: ticks }).catch(e=>console.error(e));
+            // Log known yields silently based on their length in time (continuous evolution)
+            if (dbConnected && ticks > 0 && ticks % 10000 === 0 && chaosRatio < 8.0) {
+                // Generate a fresh hash to capture the current state of the self-generated boundaries
+                let currentEvolvedHash = generateHash();
+                
+                if (!knownHashes.has(currentEvolvedHash)) {
+                    knownHashes.add(currentEvolvedHash);
+                    supabase.from('museum').upsert({ 
+                        hash: currentEvolvedHash, 
+                        chaos_ratio: chaosRatio.toFixed(2), 
+                        tick_detected: ticks, // Logs length in time survival
+                        inversions: inversions
+                    }).catch(e=>console.error(e));
+                }
             }
             requestAnimationFrame(loop);
         }
