@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>sim3colts - Boundary Discovery Engine</title>
+    <title>sim3colts - Multi-Geometry Testbed</title>
     <script src="https://cdn.tailwindcss.com"></script>
     
     <!-- SUPABASE CLIENT -->
@@ -26,7 +26,7 @@
         /* Smooth scrolling for the UI overlay */
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.5); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: rgba(168, 85, 247, 0.5); border-radius: 10px; }
     </style>
 </head>
 <body class="text-slate-100 h-screen w-screen font-sans">
@@ -39,13 +39,23 @@
         
         <!-- Top Navigation & Controls -->
         <div class="w-full max-w-7xl mx-auto shrink-0 pointer-events-auto">
-            <div class="glass-panel rounded-2xl p-4 md:p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div class="glass-panel rounded-2xl p-4 md:p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-t-2 border-t-purple-500">
                 <div>
-                    <h1 class="text-2xl md:text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-500">Boundary Discovery Engine</h1>
+                    <h1 class="text-2xl md:text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-500">Geometry Testbed</h1>
                     <p class="text-slate-300 text-[10px] md:text-sm mt-1">
-                        Autonomous Geometric Expansion | 
+                        Isolated Dimensional Sandbox | 
                         <span id="perf-indicator" class="text-emerald-400 font-mono font-bold">Auto-Scaling...</span>
                     </p>
+                    <div class="flex items-center gap-2 mt-3">
+                        <span class="text-slate-400 text-[10px] md:text-xs uppercase tracking-widest font-bold">Domain:</span>
+                        <select id="geo-select" class="bg-slate-900/80 text-purple-400 border border-slate-700 px-2 py-1 rounded text-xs font-mono outline-none shadow-inner focus:border-purple-500 transition cursor-pointer">
+                            <option value="Square">Square</option>
+                            <option value="Triangle">Equilateral Triangle</option>
+                            <option value="Hexagon">Regular Hexagon</option>
+                            <option value="Octagon">Regular Octagon</option>
+                            <option value="Circle">Circular Domain</option>
+                        </select>
+                    </div>
                 </div>
                 
                 <div class="flex gap-4 items-center">
@@ -61,7 +71,7 @@
                     [1] Platonic Boundary Sim
                 </a>
                 <a href="#" class="glass-panel px-3 py-1.5 rounded-lg text-purple-400 font-bold border-b-2 border-b-purple-400">
-                    [2] Boundary Discovery Engine
+                    [2] Multi-Geometry Testbed
                 </a>
             </div>
         </div>
@@ -100,7 +110,7 @@
                     <div class="absolute inset-0 bg-gradient-to-r from-transparent via-purple-500/10 to-transparent -translate-x-full animate-shimmer"></div>
                     <span class="text-purple-400 font-mono text-[9px] md:text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 relative z-10">
                         <span class="w-1.5 h-1.5 bg-purple-400 rounded-full shadow-[0_0_8px_#c084fc] animate-pulse"></span>
-                        Discovery Active
+                        Testbed Active
                     </span>
                 </div>
             </div>
@@ -144,7 +154,7 @@
         let width, height, CENTER_X, CENTER_Y;
         let baseScale = 1;
 
-        // Global variables
+        // Global variables needed by resizeCanvas hoisted here
         const ST_H = 5; 
         const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#4f46e5', '#a855f7'];
         let bgPattern, fgPatterns = [];
@@ -184,7 +194,7 @@
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas(); 
 
-        // --- 3. SIMULATION CONSTANTS ---
+        // --- 3. SIMULATION CONSTANTS & GEOMETRIES ---
         let CHUNK_SIZE = 300; 
         const ZETA_VOID_LIMIT = 2000; 
         
@@ -198,12 +208,34 @@
         let lastFrameTime = performance.now();
         let fpsRolling = 60;
         const perfIndicator = document.getElementById('perf-indicator');
+        
+        // DYNAMIC GEOMETRY ENGINE
+        const geometries = {
+            'Square': { type: 'poly', basePoints: [[-150,-150], [150,-150], [150,150], [-150,150]], scale: 1 },
+            'Triangle': { type: 'poly', basePoints: [[0,-180], [156,90], [-156,90]], scale: 1 },
+            'Hexagon': { type: 'poly', basePoints: [], scale: 1 },
+            'Octagon': { type: 'poly', basePoints: [], scale: 1 },
+            'Circle': { type: 'circle', baseRadius: 150, scale: 1 }
+        };
 
-        // Dynamic Bounds that expand as blades hit them
-        let bounds = { minX: -100, maxX: 100, minY: -100, maxY: 100 };
-        const MAX_BOUNDS = 380;
+        for(let i=0; i<6; i++) {
+            let angle = i * Math.PI / 3 - Math.PI/6;
+            geometries['Hexagon'].basePoints.push([Math.cos(angle)*165, Math.sin(angle)*165]);
+        }
+        for(let i=0; i<8; i++) {
+            let angle = i * Math.PI / 4 - Math.PI/8;
+            geometries['Octagon'].basePoints.push([Math.cos(angle)*160, Math.sin(angle)*160]);
+        }
 
-        // --- 4. PHYSICS ENTITIES (49 BODIES) ---
+        let currentGeoName = 'Square';
+        let activeGeo = geometries[currentGeoName];
+
+        function getScaledPoints() {
+            if (activeGeo.type !== 'poly') return [];
+            return activeGeo.basePoints.map(p => [p[0] * activeGeo.scale, p[1] * activeGeo.scale]);
+        }
+
+        // --- 5. PHYSICS ENTITIES (49 BODIES) ---
         class Ball {
             constructor(groupId, isShadow = false) {
                 this.groupId = groupId;
@@ -213,13 +245,13 @@
                 this.reset();
             }
 
-            reset(perturbation = 0) {
+            reset() {
                 this.x = (Math.random() * 80 - 40);
                 this.y = (Math.random() * 80 - 40);
                 let angle = Math.random() * Math.PI * 2;
                 let speed = this.type === 'blade' ? 2.5 : 1.2; 
-                this.vx = Math.cos(angle) * speed + perturbation;
-                this.vy = Math.sin(angle) * speed + perturbation;
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
                 this.winding = 0; 
                 this.ticksSinceHit = 0;
                 this.path = [];
@@ -257,22 +289,67 @@
 
             checkBoundaries() {
                 let hit = false;
-                if (this.x < bounds.minX || this.x > bounds.maxX) {
-                    if (this.type === 'blade') {
-                        bounds.minX -= 0.05; bounds.maxX += 0.05;
+
+                if (activeGeo.type === 'circle') {
+                    let r = activeGeo.baseRadius * activeGeo.scale;
+                    let distSq = this.x*this.x + this.y*this.y;
+                    
+                    if (distSq > r*r) {
+                        let dist = Math.sqrt(distSq);
+                        if (this.type === 'blade') activeGeo.scale += 0.0002;
+                        
+                        let nx = this.x / dist;
+                        let ny = this.y / dist;
+                        let dot = this.vx * nx + this.vy * ny;
+                        
+                        if (dot > 0) {
+                            this.vx -= 2 * dot * nx;
+                            this.vy -= 2 * dot * ny;
+                            this.x = nx * r; 
+                            this.y = ny * r;
+                            hit = true;
+                        }
                     }
-                    this.vx *= -1;
-                    this.x = this.x < bounds.minX ? bounds.minX : bounds.maxX;
-                    hit = true;
-                }
-                if (this.y < bounds.minY || this.y > bounds.maxY) {
-                    if (this.type === 'blade') {
-                        bounds.minY -= 0.05; bounds.maxY += 0.05; 
+                } 
+                else if (activeGeo.type === 'poly') {
+                    let pts = getScaledPoints();
+                    for (let i = 0; i < pts.length; i++) {
+                        let p1 = pts[i];
+                        let p2 = pts[(i+1) % pts.length];
+                        
+                        let ex = p2[0] - p1[0];
+                        let ey = p2[1] - p1[1];
+                        
+                        let nx = -ey;
+                        let ny = ex;
+                        let len = Math.sqrt(nx*nx + ny*ny);
+                        nx /= len; ny /= len;
+                        
+                        if (nx * (-p1[0]) + ny * (-p1[1]) < 0) {
+                            nx = -nx; ny = -ny;
+                        }
+
+                        let vx_p = this.x - p1[0];
+                        let vy_p = this.y - p1[1];
+                        let d = vx_p * nx + vy_p * ny;
+                        
+                        if (d < 0) { 
+                            if (this.type === 'blade') activeGeo.scale += 0.0002;
+                            
+                            let nox = -nx; let noy = -ny; 
+                            let dot = this.vx * nox + this.vy * noy;
+                            
+                            if (dot > 0) { 
+                                this.vx -= 2 * dot * nox;
+                                this.vy -= 2 * dot * noy;
+                                this.x -= d * nx; 
+                                this.y -= d * ny;
+                                hit = true;
+                            }
+                        }
                     }
-                    this.vy *= -1;
-                    this.y = this.y < bounds.minY ? bounds.minY : bounds.maxY;
-                    hit = true;
                 }
+
                 if (hit) this.ticksSinceHit = 0;
             }
 
@@ -291,12 +368,12 @@
             let str = balls.map(b => `${b.type}_${b.vx.toFixed(1)}_${b.vy.toFixed(1)}`).join('|');
             let hash = 0;
             for (let i = 0; i < str.length; i++) hash = Math.imul(31, hash) + str.charCodeAt(i) | 0;
-            return "Discovery_" + Math.abs(hash).toString(16);
+            return currentGeoName + "_" + Math.abs(hash).toString(16);
         }
 
         function initBalls() {
             balls = []; shadowBalls = [];
-            bounds = { minX: -100, maxX: 100, minY: -100, maxY: 100 };
+            activeGeo.scale = 1.0;
             inversions = 0;
             chaosRatio = 0;
             ticks = 0;
@@ -336,11 +413,11 @@
         }
 
         function checkInversion() {
-            if (bounds.maxX - bounds.minX > MAX_BOUNDS * 2) { 
+            if (activeGeo.scale > 4.5) { 
                 inversions++;
-                bounds = { minX: -20, maxX: 20, minY: -20, maxY: 20 }; 
+                activeGeo.scale = 0.5; 
                 balls.forEach(b => { b.x *= 0.1; b.y *= 0.1; b.vx *= -1; b.vy *= -1; });
-                document.getElementById('log').innerHTML = `<div class="text-pink-400 font-bold">Map Inversion ${inversions} triggered! [Discovery Core Collapsed]</div>` + document.getElementById('log').innerHTML.slice(0, 300);
+                document.getElementById('log').innerHTML = `<div class="text-purple-400 font-bold">Map Inversion ${inversions} triggered! [${currentGeoName} Core Collapsed]</div>` + document.getElementById('log').innerHTML.slice(0, 300);
             }
         }
 
@@ -371,16 +448,24 @@
                 ctx.fillRect(0, 0, width, height);
             }
 
-            // Darken outside the dynamic expanding bounds
-            ctx.fillStyle = 'rgba(15, 23, 42, 0.7)';
+            ctx.fillStyle = 'rgba(2, 6, 23, 0.7)';
             ctx.beginPath();
             ctx.rect(0, 0, width, height); 
-            ctx.rect(CENTER_X + bounds.minX*baseScale, CENTER_Y + bounds.minY*baseScale, (bounds.maxX - bounds.minX)*baseScale, (bounds.maxY - bounds.minY)*baseScale);
+            
+            if (activeGeo.type === 'circle') {
+                ctx.arc(CENTER_X, CENTER_Y, activeGeo.baseRadius * activeGeo.scale * baseScale, 0, Math.PI * 2, true); 
+            } else {
+                let pts = getScaledPoints();
+                ctx.moveTo(CENTER_X + pts[0][0]*baseScale, CENTER_Y + pts[0][1]*baseScale);
+                for(let i = pts.length - 1; i >= 0; i--) { 
+                    ctx.lineTo(CENTER_X + pts[i][0]*baseScale, CENTER_Y + pts[i][1]*baseScale);
+                }
+            }
             ctx.fill("evenodd");
 
             ctx.lineWidth = 1.5;
             ctx.globalCompositeOperation = 'hard-light'; 
-            let maxDist = (bounds.maxX - bounds.minX) * 0.3 * baseScale; 
+            let maxDist = 150 * activeGeo.scale * baseScale; 
 
             for (let i = 0; i < balls.length; i++) {
                 for (let j = i + 1; j < balls.length; j++) {
@@ -446,10 +531,22 @@
                 });
             }
             
-            // Draw Dynamic Outline
             ctx.strokeStyle = '#334155';
             ctx.lineWidth = 3;
-            ctx.strokeRect(CENTER_X + bounds.minX*baseScale, CENTER_Y + bounds.minY*baseScale, (bounds.maxX - bounds.minX)*baseScale, (bounds.maxY - bounds.minY)*baseScale);
+            if (activeGeo.type === 'circle') {
+                ctx.beginPath();
+                ctx.arc(CENTER_X, CENTER_Y, activeGeo.baseRadius * activeGeo.scale * baseScale, 0, Math.PI * 2);
+                ctx.stroke();
+            } else {
+                let pts = getScaledPoints();
+                ctx.beginPath();
+                ctx.moveTo(CENTER_X + pts[0][0]*baseScale, CENTER_Y + pts[0][1]*baseScale);
+                for(let i=1; i<pts.length; i++) {
+                    ctx.lineTo(CENTER_X + pts[i][0]*baseScale, CENTER_Y + pts[i][1]*baseScale);
+                }
+                ctx.closePath();
+                ctx.stroke();
+            }
         }
 
         function runChunk() {
@@ -550,7 +647,7 @@
             list.innerHTML = '';
             data.forEach(item => {
                 knownHashes.add(item.hash);
-                let geoLabel = item.hash.includes('_') ? item.hash.split('_')[0] : 'Discovery';
+                let geoLabel = item.hash.includes('_') ? item.hash.split('_')[0] : 'Square';
                 let shortHash = item.hash.includes('_') ? item.hash.split('_')[1].substring(0,8) : item.hash.substring(0,8);
                 
                 list.innerHTML += `
@@ -567,6 +664,13 @@
                 `;
             });
         }
+
+        document.getElementById('geo-select').addEventListener('change', (e) => {
+            currentGeoName = e.target.value;
+            activeGeo = geometries[currentGeoName];
+            document.getElementById('log').innerHTML = `<div class="text-purple-400 font-bold mt-2">>>> Dimensional Shift: ${currentGeoName}</div>` + document.getElementById('log').innerHTML.slice(0, 300);
+            initBalls();
+        });
 
         initBalls();
         loadMuseumSupabase();
