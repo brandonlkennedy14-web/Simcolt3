@@ -1,768 +1,506 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Mic, Play, Square, Cpu, Radio, Waves, Activity, Zap, Coffee, Database, AlertTriangle } from 'lucide-react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, addDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
-
-// ==========================================
-// FIREBASE SETUP
-// ==========================================
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-const firebaseApp = firebaseConfig ? initializeApp(firebaseConfig) : null;
-const auth = firebaseApp ? getAuth(firebaseApp) : null;
-const db = firebaseApp ? getFirestore(firebaseApp) : null;
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-// ==========================================
-// AUDIO SYNTHESIS & STOCHASTIC ENGINE
-// ==========================================
-
-const playKick = (ctx, time) => {
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.frequency.setValueAtTime(120, time);
-  osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.4);
-  gain.gain.setValueAtTime(1, time);
-  gain.gain.exponentialRampToValueAtTime(0.01, time + 0.4);
-  osc.start(time);
-  osc.stop(time + 0.4);
-  window.dispatchEvent(new CustomEvent('synth_play', { detail: { inst: 'kick' } }));
-};
-
-const playSnare = (ctx, time, chaos) => {
-  // Tonal component
-  const osc = ctx.createOscillator();
-  const oscGain = ctx.createGain();
-  osc.type = 'triangle';
-  osc.frequency.setValueAtTime(200, time);
-  osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.2);
-  oscGain.gain.setValueAtTime(0.4, time);
-  oscGain.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
-  osc.connect(oscGain);
-  oscGain.connect(ctx.destination);
-  osc.start(time);
-  osc.stop(time + 0.2);
-
-  // Noise component
-  const bufferSize = ctx.sampleRate * 0.2;
-  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-  const noise = ctx.createBufferSource();
-  noise.buffer = buffer;
-  const filter = ctx.createBiquadFilter();
-  filter.type = 'highpass';
-  filter.frequency.value = 1500 + chaos * 2000;
-  const noiseGain = ctx.createGain();
-  noiseGain.gain.setValueAtTime(0.6, time);
-  noiseGain.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
-  noise.connect(filter);
-  filter.connect(noiseGain);
-  noiseGain.connect(ctx.destination);
-  noise.start(time);
-
-  window.dispatchEvent(new CustomEvent('synth_play', { detail: { inst: 'snare' } }));
-};
-
-const playHat = (ctx, time, chaos) => {
-  const bufferSize = ctx.sampleRate * 0.1;
-  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-  const noise = ctx.createBufferSource();
-  noise.buffer = buffer;
-  const filter = ctx.createBiquadFilter();
-  filter.type = 'highpass';
-  filter.frequency.value = 6000 + chaos * 3000;
-  const gain = ctx.createGain();
-  gain.gain.setValueAtTime(0.2, time);
-  gain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
-  noise.connect(filter);
-  filter.connect(gain);
-  gain.connect(ctx.destination);
-  noise.start(time);
-
-  window.dispatchEvent(new CustomEvent('synth_play', { detail: { inst: 'hat' } }));
-};
-
-const playBass = (ctx, time, note, chaos) => {
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  const filter = ctx.createBiquadFilter();
-  
-  osc.type = chaos > 0.6 ? 'sawtooth' : 'square';
-  osc.frequency.setValueAtTime(440 * Math.pow(2, (note - 69) / 12), time);
-  
-  filter.type = 'lowpass';
-  filter.frequency.setValueAtTime(100 + chaos * 1200, time);
-  filter.frequency.exponentialRampToValueAtTime(50, time + 0.4);
-  
-  gain.gain.setValueAtTime(0.5, time);
-  gain.gain.exponentialRampToValueAtTime(0.001, time + 0.4);
-  
-  osc.connect(filter);
-  filter.connect(gain);
-  gain.connect(ctx.destination);
-  
-  osc.start(time);
-  osc.stop(time + 0.4);
-
-  window.dispatchEvent(new CustomEvent('synth_play', { detail: { inst: 'bass' } }));
-};
-
-const playPad = (ctx, time, notes, chaos) => {
-  notes.forEach(note => {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    const filter = ctx.createBiquadFilter();
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>sim3colts - Unified Learning Engine</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     
-    osc.type = 'sine';
-    osc.frequency.value = 440 * Math.pow(2, (note - 69) / 12);
-    osc.detune.value = (Math.random() - 0.5) * chaos * 30; // Stochastic detuning
-    
-    filter.type = 'lowpass';
-    filter.frequency.value = 400 + chaos * 1500;
-    
-    // Slow evolving attack/release
-    gain.gain.setValueAtTime(0, time);
-    gain.gain.linearRampToValueAtTime(0.12 / notes.length, time + 0.5);
-    gain.gain.linearRampToValueAtTime(0, time + 3.0);
-    
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(ctx.destination);
-    
-    osc.start(time);
-    osc.stop(time + 3.0);
-  });
-  window.dispatchEvent(new CustomEvent('synth_play', { detail: { inst: 'pad' } }));
-};
+    <!-- SUPABASE CLIENT -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-const midiToNote = (midi) => {
-  const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-  return `${notes[midi % 12]}${Math.floor(midi / 12) - 1}`;
-};
-
-// ==========================================
-// MAIN APP COMPONENT
-// ==========================================
-
-export default function App() {
-  // UX Tuners State
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [chaos, setChaos] = useState(0.4);
-  const [density, setDensity] = useState(0.5);
-  const [swing, setSwing] = useState(25);
-  const [bpm, setBpm] = useState(110);
-  
-  // AFE State
-  const [micActive, setMicActive] = useState(false);
-  const [detectedMidi, setDetectedMidi] = useState(48); // default C3
-  const [simulatedMidi, setSimulatedMidi] = useState(48);
-  const [confidence, setConfidence] = useState(0);
-  const [log, setLog] = useState(["[SYSTEM] Athematic Edge Engine initialized."]);
-
-  // Firebase & Memory State
-  const [user, setUser] = useState(null);
-  const [collectiveMemory, setCollectiveMemory] = useState([]);
-  const [aversionWarning, setAversionWarning] = useState(false);
-  const sessionStartRef = useRef(null);
-
-  // Mutable refs for high-performance scheduling
-  const audioRef = useRef({
-    ctx: null,
-    analyser: null,
-    micStream: null,
-    nextNoteTime: 0,
-    current16thNote: 0,
-    timerID: null,
-    bpm: 110,
-    chaos: 0.4,
-    density: 0.5,
-    swing: 25,
-    rootMidi: 48,
-  });
-  
-  const canvasRef = useRef(null);
-  const requestRef = useRef();
-  const activityRef = useRef({ kick: 0, snare: 0, hat: 0, bass: 0, pad: 0 });
-
-  // Sync React state to vanilla JS audio thread
-  useEffect(() => {
-    audioRef.current.chaos = chaos;
-    audioRef.current.density = density;
-    audioRef.current.swing = swing;
-    audioRef.current.bpm = bpm;
-    if (!micActive) {
-      audioRef.current.rootMidi = simulatedMidi;
-      setDetectedMidi(simulatedMidi);
-    }
-  }, [chaos, density, swing, bpm, simulatedMidi, micActive]);
-
-  const addLog = (msg) => {
-    setLog(prev => [`[${new Date().toISOString().split('T')[1].slice(0, 8)}] ${msg}`, ...prev].slice(0, 8));
-  };
-
-  // FIREBASE AUTH
-  useEffect(() => {
-    if (!auth) return;
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (e) {
-        console.error("Auth error", e);
-      }
-    };
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
-    return () => unsubscribe();
-  }, []);
-
-  // FIREBASE DATA SYNC
-  useEffect(() => {
-    if (!user || !db) return;
-    const memoryRef = collection(db, 'artifacts', appId, 'public', 'data', 'athematic_history');
-    const unsubscribe = onSnapshot(memoryRef, (snapshot) => {
-      const memories = [];
-      snapshot.forEach(doc => memories.push({ id: doc.id, ...doc.data() }));
-      // Sort in memory to keep the most recent footprints
-      memories.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
-      setCollectiveMemory(memories.slice(0, 50)); // Keep last 50 session footprints
-    }, (err) => {
-      console.error("Memory sync error:", err);
-    });
-    return () => unsubscribe();
-  }, [user]);
-
-  // AVERSION ENGINE: "Know what not to do"
-  useEffect(() => {
-    if (collectiveMemory.length === 0) return;
-    
-    // Simple distance calculation in parameter space
-    let minDistance = Infinity;
-    collectiveMemory.forEach(mem => {
-       const dC = mem.chaos - chaos;
-       const dD = mem.density - density;
-       const dS = (mem.swing - swing) / 100;
-       const dist = Math.sqrt(dC*dC + dD*dD + dS*dS);
-       if (dist < minDistance) minDistance = dist;
-    });
-
-    // If we are too close to a past configuration (dist < 0.15)
-    if (minDistance < 0.15) {
-       setAversionWarning(true);
-       // Gently push parameters away in the audio engine (System repels known patterns)
-       audioRef.current.chaos = Math.min(1, chaos + 0.2);
-       audioRef.current.density = Math.max(0, density - 0.2);
-    } else {
-       setAversionWarning(false);
-       audioRef.current.chaos = chaos;
-       audioRef.current.density = density;
-    }
-  }, [chaos, density, swing, collectiveMemory]);
-
-  // Sync React state to vanilla JS audio thread
-  useEffect(() => {
-    // Only update if aversion isn't overriding
-    if (!aversionWarning) {
-      audioRef.current.chaos = chaos;
-      audioRef.current.density = density;
-    }
-    audioRef.current.swing = swing;
-    audioRef.current.bpm = bpm;
-    if (!micActive) {
-      audioRef.current.rootMidi = simulatedMidi;
-      setDetectedMidi(simulatedMidi);
-    }
-  }, [chaos, density, swing, bpm, simulatedMidi, micActive, aversionWarning]);
-
-  // ------------------------------------------
-  // AUDIO SCHEDULING LOGIC
-  // ------------------------------------------
-  
-  const scheduleNote = (beatNumber, time) => {
-    const { ctx, chaos, density, rootMidi } = audioRef.current;
-    
-    // Core Rhythms
-    if (beatNumber % 8 === 0) {
-      if (Math.random() > chaos * 0.3) playKick(ctx, time);
-    } else if (beatNumber % 4 === 0 && Math.random() < chaos * 0.8) {
-      playKick(ctx, time); // Chaotic ghost kicks
-    }
-
-    if (beatNumber % 8 === 4) {
-      if (Math.random() > chaos * 0.4) playSnare(ctx, time, chaos);
-    }
-
-    if (Math.random() < density + 0.1) {
-      playHat(ctx, time, chaos);
-    }
-
-    // Agentic Bass (Stochastic walks over pentatonic scale based on detected pitch)
-    if (beatNumber % 2 === 0 && Math.random() < density + 0.2) {
-      const scale = [0, 3, 5, 7, 10]; // Minor pentatonic mapping
-      const interval = scale[Math.floor(Math.random() * scale.length)];
-      // Introduce atonal/chromatic steps based on chaos
-      const drift = Math.random() < chaos ? Math.floor(Math.random() * 3) - 1 : 0;
-      // Keep bass in standard register (C1-C3)
-      let targetBass = (rootMidi % 12) + 36 + interval + drift;
-      playBass(ctx, time, targetBass, chaos);
-    }
-
-    // Harmonic Pads (Probability Crossfading per document)
-    if (beatNumber === 0 && Math.random() < (1.0 - chaos * 0.5)) {
-      const padRoot = rootMidi + 12; // Octave above bass
-      // Switch between Minor 7th and more complex clusters based on chaos
-      const chord = chaos > 0.6 
-        ? [padRoot, padRoot + 4, padRoot + 7, padRoot + 11, padRoot + 14] 
-        : [padRoot, padRoot + 3, padRoot + 7, padRoot + 10];
-      playPad(ctx, time, chord, chaos);
-    }
-  };
-
-  const scheduler = () => {
-    const scheduleAheadTime = 0.1;
-    while (audioRef.current.nextNoteTime < audioRef.current.ctx.currentTime + scheduleAheadTime) {
-      const beat = audioRef.current.current16thNote;
-      const secondsPerBeat = 60.0 / audioRef.current.bpm;
-      let scheduleTime = audioRef.current.nextNoteTime;
-      
-      // DNODR Micro-timing Swing Logic
-      if (beat % 2 === 1) { 
-        scheduleTime += (audioRef.current.swing / 100) * (0.25 * secondsPerBeat) * 0.5;
-      }
-      
-      scheduleNote(beat, scheduleTime);
-      
-      // Advance clock
-      audioRef.current.nextNoteTime += 0.25 * secondsPerBeat;
-      audioRef.current.current16thNote = (beat + 1) % 16;
-    }
-    audioRef.current.timerID = setTimeout(scheduler, 25.0);
-  };
-
-  const togglePlay = async () => {
-    if (!audioRef.current.ctx) {
-      audioRef.current.ctx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    
-    if (audioRef.current.ctx.state === 'suspended') {
-      await audioRef.current.ctx.resume();
-    }
-
-    if (isPlaying) {
-      clearTimeout(audioRef.current.timerID);
-      setIsPlaying(false);
-      addLog("Stochastic orchestration halted.");
-      
-      // Save session to memory if it ran for at least 3 seconds
-      if (sessionStartRef.current && Date.now() - sessionStartRef.current > 3000 && db && user) {
-         const memoryRef = collection(db, 'artifacts', appId, 'public', 'data', 'athematic_history');
-         addDoc(memoryRef, {
-            chaos, density, swing, bpm,
-            rootMidi: audioRef.current.rootMidi,
-            timestamp: serverTimestamp(),
-            userId: user.uid
-         }).catch(e => console.error(e));
-         addLog("Session footprint saved to Collective Memory.");
-      }
-    } else {
-      setIsPlaying(true);
-      sessionStartRef.current = Date.now();
-      audioRef.current.nextNoteTime = audioRef.current.ctx.currentTime + 0.1;
-      scheduler();
-      addLog("Generating accompaniment. Agent connected.");
-    }
-  };
-
-  // ------------------------------------------
-  // MICROPHONE & AFE PIPELINE
-  // ------------------------------------------
-
-  const toggleMic = async () => {
-    if (micActive) {
-      if (audioRef.current.micStream) {
-        audioRef.current.micStream.getTracks().forEach(track => track.stop());
-      }
-      setMicActive(false);
-      setConfidence(0);
-      addLog("Microphone pipeline disconnected.");
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      if (!audioRef.current.ctx) {
-        audioRef.current.ctx = new (window.AudioContext || window.webkitAudioContext)();
-      }
-      const source = audioRef.current.ctx.createMediaStreamSource(stream);
-      const analyser = audioRef.current.ctx.createAnalyser();
-      analyser.fftSize = 2048;
-      source.connect(analyser); // Do not connect to destination (prevents feedback)
-      
-      audioRef.current.micStream = stream;
-      audioRef.current.analyser = analyser;
-      setMicActive(true);
-      addLog("Audio Feature Extraction enabled on edge.");
-    } catch (err) {
-      addLog("Mic access denied. Falling back to synthetic pitch input.");
-    }
-  };
-
-  // UI update loop for metrics
-  useEffect(() => {
-    const metricInterval = setInterval(() => {
-      if (micActive && audioRef.current.analyser) {
-        // Simulated CREPE Pitch Extraction
-        const analyser = audioRef.current.analyser;
-        const bufferLength = analyser.frequencyBinCount;
-        const dataArray = new Float32Array(bufferLength);
-        analyser.getFloatFrequencyData(dataArray);
-
-        let maxVal = -Infinity;
-        let maxIndex = -1;
-        for (let i = 0; i < bufferLength; i++) {
-          if (dataArray[i] > maxVal) {
-            maxVal = dataArray[i];
-            maxIndex = i;
-          }
-        }
-
-        const nyquist = audioRef.current.ctx.sampleRate / 2;
-        const frequency = (maxIndex / bufferLength) * nyquist;
-
-        if (maxVal > -60 && frequency > 60 && frequency < 800) {
-          const midi = Math.round(69 + 12 * Math.log2(frequency / 440));
-          audioRef.current.rootMidi = midi;
-          setDetectedMidi(midi);
-          setConfidence(Math.floor(88 + Math.random() * 11)); // High confidence when active
-        } else {
-          setConfidence(Math.floor(10 + Math.random() * 20)); // Low confidence (hunting)
-        }
-      } else if (!micActive) {
-         setConfidence(100); // Synthetic input is 100% confident
-      }
-    }, 200);
-
-    return () => clearInterval(metricInterval);
-  }, [micActive]);
-
-  // ------------------------------------------
-  // VISUALIZER
-  // ------------------------------------------
-
-  useEffect(() => {
-    const handlePlay = (e) => {
-      activityRef.current[e.detail.inst] = 1.0;
-    };
-    window.addEventListener('synth_play', handlePlay);
-    return () => window.removeEventListener('synth_play', handlePlay);
-  }, []);
-
-  useEffect(() => {
-    // Ruliad Composite State
-    let nodes = [];
-    const maxNodes = 100;
-
-    // Initialize state space nodes
-    for(let i=0; i<maxNodes; i++) {
-      nodes.push({
-        x: Math.random(),
-        y: Math.random(),
-        vx: (Math.random() - 0.5) * 0.01,
-        vy: (Math.random() - 0.5) * 0.01,
-        phase: Math.random() * Math.PI * 2
-      });
-    }
-
-    const renderLoop = () => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      const width = canvas.width;
-      const height = canvas.height;
-      const { chaos, density } = audioRef.current;
-
-      // Dark matter trailing background (Munker assimilation effect base)
-      ctx.fillStyle = `rgba(10, 15, 24, ${0.15 - (chaos * 0.05)})`; 
-      ctx.fillRect(0, 0, width, height);
-
-      // Active Node Count based on Density
-      const activeNodes = Math.floor(20 + (density * 80));
-
-      // Instrument shockwaves & colors
-      const insts = ['kick', 'snare', 'hat', 'bass', 'pad'];
-      const colors = ['244, 63, 94', '245, 158, 11', '16, 185, 129', '168, 85, 247', '59, 130, 246'];
-      
-      let globalPulse = 0;
-      insts.forEach(inst => globalPulse += activityRef.current[inst]);
-
-      // Draw Ruliad Hypergraph Network
-      ctx.lineWidth = 0.5 + (chaos * 1.5);
-      
-      for (let i = 0; i < activeNodes; i++) {
-        let n1 = nodes[i];
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #020617; }
         
-        // Kinematics bound to Chaos
-        n1.x += n1.vx * (1 + chaos * 5);
-        n1.y += n1.vy * (1 + chaos * 5);
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
         
-        // Wrap edges (toroidal space)
-        if(n1.x < 0) n1.x = 1; if(n1.x > 1) n1.x = 0;
-        if(n1.y < 0) n1.y = 1; if(n1.y > 1) n1.y = 0;
+        select {
+            background-color: #0f172a;
+            color: #38bdf8;
+            border: 1px solid #334155;
+            outline: none;
+        }
+    </style>
+</head>
+<body class="text-slate-100 h-screen w-screen font-sans">
+    
+    <!-- FULLSCREEN COMPOSITE SIMULATION CANVAS -->
+    <canvas id="bg-canvas" class="fixed inset-0 w-full h-full z-0"></canvas>
 
-        const px1 = n1.x * width;
-        const py1 = n1.y * height + Math.sin(n1.phase + Date.now()*0.001) * (chaos * 20);
+    <!-- MINIMALIST UI OVERLAY -->
+    <div class="absolute inset-0 z-10 flex flex-col p-3 md:p-6 pointer-events-none">
+        
+        <!-- Header Controls -->
+        <div class="w-full max-w-7xl mx-auto shrink-0 pointer-events-auto">
+            <div class="glass-panel rounded-2xl p-4 md:p-5 flex justify-between items-center border-t-2 border-t-sky-500/50">
+                <div>
+                    <h1 id="engine-title" class="text-xl md:text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-indigo-500 transition-all duration-500">Platonic Boundary Sim</h1>
+                    
+                    <div id="geo-selector-container" class="flex items-center gap-2 mt-2">
+                        <span class="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Domain:</span>
+                        <select id="geo-select" class="bg-slate-900/80 text-sky-400 border border-slate-700 px-2 py-0.5 rounded text-[10px] font-mono cursor-pointer transition">
+                            <option value="Square">Square</option>
+                            <option value="Triangle">Equilateral Triangle</option>
+                            <option value="Hexagon">Regular Hexagon</option>
+                            <option value="Octagon">Regular Octagon</option>
+                            <option value="Circle">Circular Domain</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="flex gap-4 items-center">
+                    <span id="perf-indicator" class="text-[10px] font-mono text-emerald-400 uppercase font-bold hidden md:block">Compute: Balanced</span>
+                    <a href="https://buymeacoffee.com/brandonkennedy" target="_blank" class="hover:scale-105 transition-transform duration-200">
+                        <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 32px !important;width: 115px !important;" >
+                    </a>
+                </div>
+            </div>
 
-        // Connect nearby nodes
-        for (let j = i + 1; j < activeNodes; j++) {
-          let n2 = nodes[j];
-          const px2 = n2.x * width;
-          const py2 = n2.y * height + Math.cos(n2.phase + Date.now()*0.001) * (chaos * 20);
-          
-          const dist = Math.hypot(px2 - px1, py2 - py1);
-          
-          if (dist < 60 + (density * 40)) {
-            // Base connection
-            let strokeStyle = `rgba(100, 116, 139, ${1 - dist/100})`;
-            
-            // Munker chromatic interference from instrument activity
-            if (globalPulse > 0.1) {
-              insts.forEach((inst, idx) => {
-                const act = activityRef.current[inst];
-                if (act > 0.1 && (i % (idx + 2) === 0)) {
-                   strokeStyle = `rgba(${colors[idx]}, ${act * (1 - dist/100)})`;
+            <!-- NAVIGATION TABS -->
+            <div class="mt-3 flex flex-wrap gap-3 text-[10px] md:text-xs font-mono tracking-wide">
+                <button id="tab-platonic" class="glass-panel px-4 py-2 rounded-lg text-sky-400 font-bold border-b-2 border-b-sky-400 transition-all">
+                    [1] PLATONIC BOUNDARIES
+                </button>
+                <button id="tab-discovery" class="glass-panel px-4 py-2 rounded-lg text-slate-400 hover:text-purple-300 transition-all">
+                    [2] DISCOVERY ENGINE
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // --- 1. SUPABASE INTEGRATION ---
+        const SUPABASE_URL = 'https://xoolmbmnzbsvcqeyqvyi.supabase.co'; 
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhvb2xtYm1uemJzdmNxZXlxdnlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDMwNDQsImV4cCI6MjA4NzAxOTA0NH0.ebTwMZ_byU6EXtuR0jynct64QO5ornQrCwElQ5b9TxQ';
+
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        let dbConnected = false;
+        let museumTableExists = true;
+        let knownHashes = new Set();
+
+        // --- 2. GLOBAL CONSTANTS ---
+        const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#4f46e5', '#a855f7'];
+        const ST_H = 5; 
+        const ZETA_VOID_LIMIT = 2000; 
+
+        // --- 3. CANVAS & PATTERNS ---
+        const canvas = document.getElementById('bg-canvas');
+        const ctx = canvas.getContext('2d');
+        let width, height, CENTER_X, CENTER_Y, baseScale = 1;
+        let bgPattern, fgPatterns = [];
+
+        function initPatterns() {
+            let bgCanv = document.createElement('canvas');
+            bgCanv.width = 1; bgCanv.height = ST_H * 7;
+            let bCtx = bgCanv.getContext('2d');
+            colors.forEach((c, i) => {
+                bCtx.fillStyle = c;
+                bCtx.fillRect(0, i * ST_H, 1, ST_H);
+            });
+            bgPattern = ctx.createPattern(bgCanv, 'repeat');
+
+            fgPatterns = colors.map((c, i) => {
+                let fgCanv = document.createElement('canvas');
+                fgCanv.width = 1; fgCanv.height = ST_H * 7;
+                let fCtx = fgCanv.getContext('2d');
+                fCtx.fillStyle = c;
+                fCtx.fillRect(0, i * ST_H, 1, ST_H);
+                return ctx.createPattern(fgCanv, 'repeat');
+            });
+        }
+
+        function resizeCanvas() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+            CENTER_X = width / 2;
+            CENTER_Y = height / 2;
+            baseScale = Math.min(width, height) / 800; 
+            initPatterns(); 
+        }
+
+        // --- 4. ENGINE STATE ---
+        let simMode = 'platonic'; 
+        let currentGeoName = 'Square';
+        let isRunning = true;
+        let ticks = 0;
+        let inversions = 0;
+        let chaosRatio = 0.0;
+        let currentConfigHash = "";
+        let CHUNK_SIZE = 300; 
+        let lastFrameTime = performance.now();
+        let fpsRolling = 60;
+
+        let discoveryBounds = { minX: -150, maxX: 150, minY: -150, maxY: 150 };
+        const geometries = {
+            'Square': { type: 'poly', basePoints: [[-150,-150], [150,-150], [150,150], [-150,150]], scale: 1 },
+            'Triangle': { type: 'poly', basePoints: [[0,-180], [156,90], [-156,90]], scale: 1 },
+            'Hexagon': { type: 'poly', basePoints: [], scale: 1 },
+            'Octagon': { type: 'poly', basePoints: [], scale: 1 },
+            'Circle': { type: 'circle', baseRadius: 150, scale: 1 }
+        };
+
+        for(let i=0; i<6; i++) geometries['Hexagon'].basePoints.push([Math.cos(i * Math.PI / 3 - Math.PI/6)*165, Math.sin(i * Math.PI / 3 - Math.PI/6)*165]);
+        for(let i=0; i<8; i++) geometries['Octagon'].basePoints.push([Math.cos(i * Math.PI / 4 - Math.PI/8)*160, Math.sin(i * Math.PI / 4 - Math.PI/8)*160]);
+
+        let activeGeo = geometries['Square'];
+
+        function getScaledPoints() {
+            if (activeGeo.type !== 'poly') return [];
+            return activeGeo.basePoints.map(p => [p[0] * activeGeo.scale, p[1] * activeGeo.scale]);
+        }
+
+        // --- 5. ENTITY PHYSICS ---
+        class Ball {
+            constructor(groupId, isShadow = false) {
+                this.groupId = groupId;
+                this.color = colors[groupId];
+                this.isShadow = isShadow;
+                this.type = Math.random() > 0.5 ? 'smith' : 'blade';
+                this.reset();
+            }
+            reset() {
+                this.x = (Math.random() * 80 - 40);
+                this.y = (Math.random() * 80 - 40);
+                let speed = this.type === 'blade' ? 2.5 : 1.2; 
+                let angle = Math.random() * Math.PI * 2;
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                this.winding = 0; 
+                this.ticksSinceHit = 0;
+                this.path = [];
+                this.lastAngle = undefined;
+            }
+            update(shadowBall) {
+                this.x += this.vx; this.y += this.vy; this.ticksSinceHit++;
+                if (!this.isShadow && shadowBall) {
+                    let dx = this.x - shadowBall.x; let dy = this.y - shadowBall.y;
+                    let div = Math.sqrt(dx*dx + dy*dy);
+                    chaosRatio = (chaosRatio * 0.999) + (div * 0.001); 
                 }
-              });
+                if (!this.isShadow && ticks % 5 === 0) {
+                    this.path.push({x: this.x, y: this.y});
+                    if (this.path.length > 50) this.path.shift(); 
+                }
+                let angle = Math.atan2(this.y, this.x);
+                if (this.lastAngle !== undefined) {
+                    let da = angle - this.lastAngle;
+                    if (da > Math.PI) da -= 2 * Math.PI;
+                    if (da < -Math.PI) da += 2 * Math.PI;
+                    this.winding += da / (2 * Math.PI);
+                }
+                this.lastAngle = angle;
+                this.checkBoundaries();
+                
+                // Zeta Void protocol (Fold back to origin if trapped in infinite loop)
+                if (this.ticksSinceHit > ZETA_VOID_LIMIT) {
+                    this.x *= 0.1; this.y *= 0.1; this.vx *= -1; this.vy *= -1;
+                    this.ticksSinceHit = 0;
+                }
+            }
+            checkBoundaries() {
+                let hit = false;
+                if (simMode === 'discovery') {
+                    // Expanding Square Boundaries (Discovery Mode)
+                    if (this.x < discoveryBounds.minX || this.x > discoveryBounds.maxX) {
+                        if (this.type === 'blade') { discoveryBounds.minX -= 0.05; discoveryBounds.maxX += 0.05; }
+                        this.vx *= -1; this.x = this.x < discoveryBounds.minX ? discoveryBounds.minX : discoveryBounds.maxX;
+                        hit = true;
+                    }
+                    if (this.y < discoveryBounds.minY || this.y > discoveryBounds.maxY) {
+                        if (this.type === 'blade') { discoveryBounds.minY -= 0.05; discoveryBounds.maxY += 0.05; }
+                        this.vy *= -1; this.y = this.y < discoveryBounds.minY ? discoveryBounds.minY : discoveryBounds.maxY;
+                        hit = true;
+                    }
+                } else {
+                    // Expanding Platonic Geometry Boundaries
+                    if (activeGeo.type === 'circle') {
+                        let r = activeGeo.baseRadius * activeGeo.scale;
+                        if (this.x*this.x + this.y*this.y > r*r) {
+                            if (this.type === 'blade') activeGeo.scale += 0.0002;
+                            let dist = Math.sqrt(this.x*this.x + this.y*this.y);
+                            let nx = this.x / dist, ny = this.y / dist;
+                            let dot = this.vx * nx + this.vy * ny;
+                            if (dot > 0) { this.vx -= 2 * dot * nx; this.vy -= 2 * dot * ny; this.x = nx * r; this.y = ny * r; hit = true; }
+                        }
+                    } else {
+                        let pts = getScaledPoints();
+                        for (let i = 0; i < pts.length; i++) {
+                            let p1 = pts[i], p2 = pts[(i+1)%pts.length];
+                            let nx = -(p2[1]-p1[1]), ny = p2[0]-p1[0];
+                            let len = Math.sqrt(nx*nx + ny*ny); nx /= len; ny /= len;
+                            if (nx * (-p1[0]) + ny * (-p1[1]) < 0) { nx = -nx; ny = -ny; }
+                            let d = (this.x-p1[0])*nx + (this.y-p1[1])*ny;
+                            if (d < 0) {
+                                if (this.type === 'blade') activeGeo.scale += 0.0002;
+                                let dot = this.vx * (-nx) + this.vy * (-ny);
+                                if (dot > 0) { 
+                                    this.vx -= 2 * dot * (-nx); this.vy -= 2 * dot * (-ny); 
+                                    this.x -= d * nx; this.y -= d * ny; // Push back inside
+                                    hit = true; 
+                                }
+                            }
+                        }
+                    }
+                }
+                if (hit) this.ticksSinceHit = 0;
+            }
+        }
+
+        let balls = [], shadowBalls = [];
+        function generateHash() {
+            let str = balls.map(b => `${b.type}_${b.vx.toFixed(1)}_${b.vy.toFixed(1)}`).join('|');
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) hash = Math.imul(31, hash) + str.charCodeAt(i) | 0;
+            return (simMode === 'discovery' ? 'Disc_' : currentGeoName + '_') + Math.abs(hash).toString(16);
+        }
+
+        function initBalls() {
+            balls = []; shadowBalls = [];
+            discoveryBounds = { minX: -150, maxX: 150, minY: -150, maxY: 150 };
+            activeGeo.scale = 1.0;
+            ticks = 0; chaosRatio = 0; inversions = 0;
+            for (let g = 0; g < 7; g++) {
+                for (let i = 0; i < 7; i++) {
+                    let b = new Ball(g, false); balls.push(b);
+                    let s = new Ball(g, true); s.x = b.x; s.y = b.y; s.vx = b.vx + 1e-7; s.vy = b.vy + 1e-7;
+                    shadowBalls.push(s);
+                }
+            }
+            currentConfigHash = generateHash();
+            if (knownHashes.has(currentConfigHash)) initBalls(); // Reroll if swarm already mapped this!
+        }
+
+        function applyExclusionPrinciple() {
+            for (let i = 0; i < balls.length; i++) {
+                for (let j = i + 1; j < balls.length; j++) {
+                    let dx = balls[i].x - balls[j].x; let dy = balls[i].y - balls[j].y;
+                    if (dx*dx + dy*dy < 25) { 
+                        let b1 = balls[i], b2 = balls[j];
+                        // Zero memory detonates to chaos
+                        if (Math.abs(b1.winding) < 0.1) { b1.vx = (Math.random()-0.5)*15; b1.vy = (Math.random()-0.5)*15; }
+                        // Higher memory asserts dominance
+                        if (Math.abs(b1.winding) > Math.abs(b2.winding)) { b2.vx *= -1.08; b2.vy *= -1.08; }
+                        else { b1.vx *= -1.08; b1.vy *= -1.08; }
+                    }
+                }
+            }
+        }
+
+        function checkInversion() {
+            // Map Inversion logic (Restored)
+            if (simMode === 'platonic' && activeGeo.scale > 4.5) { 
+                inversions++;
+                activeGeo.scale = 0.5; 
+                balls.forEach(b => { b.x *= 0.1; b.y *= 0.1; b.vx *= -1; b.vy *= -1; });
+            } else if (simMode === 'discovery' && (discoveryBounds.maxX - discoveryBounds.minX > 760)) {
+                inversions++;
+                discoveryBounds = { minX: -50, maxX: 50, minY: -50, maxY: 50 }; 
+                balls.forEach(b => { b.x *= 0.1; b.y *= 0.1; b.vx *= -1; b.vy *= -1; });
+            }
+        }
+
+        // --- 6. RENDER MASTER ---
+        function draw() {
+            ctx.clearRect(0, 0, width, height);
+            
+            // 1. GLOBAL MUNKER STRIPE BACKGROUND
+            ctx.fillStyle = bgPattern; ctx.fillRect(0, 0, width, height);
+            
+            // 2. MASK NON-ACTIVE BOUNDS
+            ctx.fillStyle = 'rgba(2, 6, 23, 0.7)';
+            ctx.beginPath(); ctx.rect(0, 0, width, height); // Outer CW
+            
+            if (simMode === 'discovery') {
+                ctx.rect(CENTER_X + discoveryBounds.minX*baseScale, CENTER_Y + discoveryBounds.minY*baseScale, (discoveryBounds.maxX-discoveryBounds.minX)*baseScale, (discoveryBounds.maxY-discoveryBounds.minY)*baseScale);
+            } else if (activeGeo.type === 'circle') {
+                ctx.arc(CENTER_X, CENTER_Y, activeGeo.baseRadius * activeGeo.scale * baseScale, 0, Math.PI * 2, true); // Inner CCW
+            } else {
+                let pts = getScaledPoints(); ctx.moveTo(CENTER_X + pts[0][0]*baseScale, CENTER_Y + pts[0][1]*baseScale);
+                for(let i = pts.length - 1; i >= 0; i--) ctx.lineTo(CENTER_X + pts[i][0]*baseScale, CENTER_Y + pts[i][1]*baseScale);
+            }
+            ctx.fill("evenodd");
+
+            // 3. RULIAD GRAPH WARPED BY PHYSICS
+            ctx.lineWidth = 1.5;
+            ctx.globalCompositeOperation = 'hard-light'; 
+            let maxDist = (simMode === 'discovery' ? 150 : 150 * activeGeo.scale) * baseScale;
+            
+            for (let i = 0; i < balls.length; i++) {
+                for (let j = i + 1; j < balls.length; j++) {
+                    let dx = balls[i].x*baseScale - balls[j].x*baseScale;
+                    let dy = balls[i].y*baseScale - balls[j].y*baseScale;
+                    if (Math.abs(dx) > maxDist || Math.abs(dy) > maxDist) continue;
+                    
+                    let dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist < maxDist) {
+                        ctx.beginPath();
+                        ctx.moveTo(CENTER_X + balls[i].x*baseScale, CENTER_Y + balls[i].y*baseScale);
+
+                        let warpX = (balls[i].vx + balls[j].vx) * 10 * baseScale;
+                        let warpY = (balls[i].vy + balls[j].vy) * 10 * baseScale;
+
+                        ctx.bezierCurveTo(
+                            CENTER_X + balls[i].x*baseScale + warpX, CENTER_Y + balls[i].y*baseScale - warpY, 
+                            CENTER_X + balls[j].x*baseScale - warpX, CENTER_Y + balls[j].y*baseScale + warpY, 
+                            CENTER_X + balls[j].x*baseScale, CENTER_Y + balls[j].y*baseScale
+                        );
+
+                        let opacity = (1 - dist / maxDist) * 0.8;
+                        let grad = ctx.createLinearGradient(CENTER_X + balls[i].x*baseScale, CENTER_Y + balls[i].y*baseScale, CENTER_X + balls[j].x*baseScale, CENTER_Y + balls[j].y*baseScale);
+                        grad.addColorStop(0, balls[i].color + Math.floor(opacity*255).toString(16).padStart(2,'0'));
+                        grad.addColorStop(1, balls[j].color + Math.floor(opacity*255).toString(16).padStart(2,'0'));
+                        
+                        ctx.strokeStyle = grad;
+                        ctx.stroke();
+                    }
+                }
+            }
+            ctx.globalCompositeOperation = 'source-over';
+
+            // 4. RENDER HISTORICAL TRAILS & MUNKER BALLS (RESTORED FULLY)
+            for (let g = 0; g < 7; g++) {
+                let groupBalls = balls.filter(b => b.groupId === g);
+                
+                // Draw Trails (Quadratic Curves)
+                groupBalls.forEach(b => {
+                    if (b.path.length > 0) {
+                        ctx.beginPath();
+                        ctx.moveTo(CENTER_X + b.path[0].x*baseScale, CENTER_Y + b.path[0].y*baseScale);
+                        for (let i = 1; i < b.path.length; i++) {
+                            let xc = CENTER_X + (b.path[i-1].x + b.path[i].x)/2 * baseScale;
+                            let yc = CENTER_Y + (b.path[i-1].y + b.path[i].y)/2 * baseScale;
+                            ctx.quadraticCurveTo(CENTER_X + b.path[i-1].x*baseScale, CENTER_Y + b.path[i-1].y*baseScale, xc, yc);
+                        }
+                        ctx.lineTo(CENTER_X + b.x*baseScale, CENTER_Y + b.y*baseScale);
+                        
+                        ctx.lineWidth = b.type === 'smith' ? 4 : 2; 
+                        ctx.strokeStyle = '#94a3b8'; ctx.stroke(); // Grey Base
+                        if(fgPatterns[g]) {
+                            ctx.strokeStyle = fgPatterns[g]; ctx.stroke(); // Munker Color Layer
+                        }
+                    }
+                });
+
+                // Draw Bodies
+                groupBalls.forEach(b => {
+                    ctx.beginPath();
+                    ctx.arc(CENTER_X + b.x*baseScale, CENTER_Y + b.y*baseScale, (b.type === 'smith' ? 8 : 5) * baseScale, 0, Math.PI * 2);
+                    ctx.fillStyle = '#94a3b8'; ctx.fill(); // Grey Base
+                    if(fgPatterns[g]) {
+                        ctx.fillStyle = fgPatterns[g]; ctx.fill(); // Munker Color Layer
+                    }
+                });
             }
 
-            ctx.beginPath();
-            ctx.moveTo(px1, py1);
-            ctx.lineTo(px2, py2);
-            ctx.strokeStyle = strokeStyle;
-            ctx.stroke();
-          }
+            // 5. DRAW BOUNDARY OUTLINES
+            ctx.strokeStyle = '#334155';
+            ctx.lineWidth = 3;
+            if (simMode === 'discovery') {
+                ctx.strokeRect(CENTER_X + discoveryBounds.minX*baseScale, CENTER_Y + discoveryBounds.minY*baseScale, (discoveryBounds.maxX - discoveryBounds.minX)*baseScale, (discoveryBounds.maxY - discoveryBounds.minY)*baseScale);
+            } else if (activeGeo.type === 'circle') {
+                ctx.beginPath(); ctx.arc(CENTER_X, CENTER_Y, activeGeo.baseRadius * activeGeo.scale * baseScale, 0, Math.PI * 2); ctx.stroke();
+            } else {
+                let pts = getScaledPoints();
+                ctx.beginPath(); ctx.moveTo(CENTER_X + pts[0][0]*baseScale, CENTER_Y + pts[0][1]*baseScale);
+                for(let i=1; i<pts.length; i++) ctx.lineTo(CENTER_X + pts[i][0]*baseScale, CENTER_Y + pts[i][1]*baseScale);
+                ctx.closePath(); ctx.stroke();
+            }
         }
-        
-        // Draw Node vertices
-        if (chaos > 0.5) {
-           ctx.fillStyle = `rgba(255, 255, 255, ${0.1 + chaos*0.3})`;
-           ctx.fillRect(px1-1, py1-1, 2, 2);
-        }
-      }
 
-      // Draw Waveform Overlay (if mic active)
-      if (micActive && audioRef.current.analyser) {
-        const bufferLength = audioRef.current.analyser.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
-        audioRef.current.analyser.getByteTimeDomainData(dataArray);
-
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = 'rgba(6, 182, 212, 0.9)'; // cyan
-        ctx.beginPath();
-        const sliceWidth = width * 1.0 / bufferLength;
-        let x = 0;
-        for (let i = 0; i < bufferLength; i++) {
-          const v = dataArray[i] / 128.0;
-          const y = v * height / 2;
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-          x += sliceWidth;
-        }
-        ctx.stroke();
-      }
-
-      // Decay instrument activity
-      insts.forEach((inst) => {
-        if (activityRef.current[inst] > 0.01) {
-          activityRef.current[inst] *= 0.88; 
-        } else {
-          activityRef.current[inst] = 0;
-        }
-      });
-
-      requestRef.current = requestAnimationFrame(renderLoop);
-    };
-    
-    requestRef.current = requestAnimationFrame(renderLoop);
-    return () => cancelAnimationFrame(requestRef.current);
-  }, [micActive]);
-
-
-  return (
-    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-[#0a0f18] to-black text-slate-300 p-4 md:p-8 font-sans selection:bg-cyan-900 selection:text-cyan-100">
-      
-      {/* HEADER */}
-      <header className="flex flex-col md:flex-row md:items-center justify-between mb-8 border-b border-slate-800/60 pb-5 gap-4">
-        <div className="flex items-center gap-4">
-          <div className="bg-cyan-500/10 p-2.5 rounded-xl border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.15)]">
-            <Waves className="w-8 h-8 text-cyan-400" />
-          </div>
-          <div>
-            <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400 tracking-wide">
-              Athematic<span className="text-cyan-400">.ai</span>
-            </h1>
-            <p className="text-[10px] text-cyan-500/70 font-mono tracking-[0.2em] uppercase mt-1">
-              Ruliad Co-Creation Matrix
-            </p>
-          </div>
-        </div>
-        
-        <div className="flex flex-wrap items-center gap-4">
-          <a href="https://www.buymeacoffee.com/" target="_blank" rel="noreferrer" className="flex items-center gap-2 px-4 py-2 bg-[#FFDD00]/10 hover:bg-[#FFDD00]/20 text-[#FFDD00] rounded-xl border border-[#FFDD00]/30 transition-all duration-300 text-xs font-bold tracking-wide shadow-[0_0_10px_rgba(255,221,0,0.1)] hover:shadow-[0_0_15px_rgba(255,221,0,0.2)]">
-            <Coffee className="w-4 h-4" />
-            BUY ME A COFFEE
-          </a>
-          <div className="flex gap-6 border border-slate-800 bg-slate-900/50 rounded-xl p-3 shadow-inner">
-            <div className="flex flex-col">
-               <span className="text-[9px] text-slate-500 font-mono tracking-widest">INFERENCE</span>
-               <span className="text-xs text-emerald-400 font-mono font-medium flex items-center gap-1"><Zap className="w-3 h-3"/> EDGE ONNX</span>
-            </div>
-            <div className="w-px bg-slate-800"></div>
-            <div className="flex flex-col">
-               <span className="text-[9px] text-slate-500 font-mono tracking-widest">SYS LATENCY</span>
-               <span className="text-xs text-emerald-400 font-mono font-medium">{'< 24ms'}</span>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* COLUMN 1: AUDIO FEATURE EXTRACTION */}
-        <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden flex flex-col">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-            <Mic className="w-4 h-4 text-cyan-400" /> Audio Feature Extraction
-          </h2>
-          
-          <button 
-            onClick={toggleMic}
-            className={`w-full py-3 px-4 rounded-xl flex justify-center items-center gap-2 font-medium transition-all duration-300 shadow-lg ${micActive ? 'bg-rose-500/10 text-rose-400 border border-rose-500/50 shadow-rose-500/10' : 'bg-cyan-500 hover:bg-cyan-400 text-slate-900 shadow-cyan-500/20 border border-transparent'}`}
-          >
-            {micActive ? <Square className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-            {micActive ? 'Halt Microphone Input' : 'Initialize Listening Pipeline'}
-          </button>
-          
-          {!micActive && (
-             <div className="mt-6 p-4 bg-slate-900/80 rounded-xl border border-slate-700/50">
-               <label className="text-xs text-slate-400 font-mono flex justify-between mb-3">
-                 <span>SIMULATED VOCAL PITCH</span>
-                 <span className="text-cyan-400 font-bold">{midiToNote(simulatedMidi)}</span>
-               </label>
-               <input 
-                 type="range" min="36" max="84" step="1" 
-                 value={simulatedMidi} 
-                 onChange={e => setSimulatedMidi(parseInt(e.target.value))}
-                 className="w-full accent-cyan-500 bg-slate-950 rounded-full h-1.5 appearance-none cursor-pointer" 
-               />
-               <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
-                 Using synthetic tone generation. Enable microphone for real-time CREPE pitch extraction.
-               </p>
-             </div>
-          )}
-
-          <div className="mt-auto pt-6 grid grid-cols-2 gap-3">
-            <div className="bg-[#0a0f18] p-4 rounded-xl border border-slate-800/80 shadow-inner">
-               <p className="text-[10px] text-slate-500 font-mono tracking-widest mb-1">FUNDAMENTAL</p>
-               <p className="text-2xl font-bold text-white">{midiToNote(detectedMidi)}</p>
-            </div>
-            <div className="bg-[#0a0f18] p-4 rounded-xl border border-slate-800/80 shadow-inner relative overflow-hidden">
-               <p className="text-[10px] text-slate-500 font-mono tracking-widest mb-1 z-10 relative">CONFIDENCE</p>
-               <p className="text-2xl font-bold text-white z-10 relative">{confidence}%</p>
-               {/* Confidence bar background */}
-               <div className="absolute bottom-0 left-0 h-1 bg-emerald-500 transition-all duration-200" style={{ width: `${confidence}%` }}></div>
-            </div>
-          </div>
-        </div>
-
-        {/* COLUMN 2: GENERATIVE AGENT TUNERS */}
-      <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
-        {aversionWarning && (
-           <div className="absolute top-0 left-0 right-0 bg-amber-500/20 text-amber-400 text-[10px] font-mono text-center py-1.5 border-b border-amber-500/30 flex items-center justify-center gap-2">
-             <AlertTriangle className="w-3 h-3" />
-             SYSTEM AVERSION: KNOWN TERRITORY. APPLYING STOCHASTIC DRIFT.
-           </div>
-        )}
-        <h2 className={`text-xs font-bold uppercase tracking-widest mb-6 flex items-center gap-2 ${aversionWarning ? 'text-amber-400 mt-4' : 'text-slate-400'}`}>
-          <Cpu className={`w-4 h-4 ${aversionWarning ? 'text-amber-400' : 'text-purple-400'}`} /> Agentic UX Tuners
-        </h2>
-
-        <div className="space-y-7">
-            <div>
-              <div className="flex justify-between mb-3">
-                <label className="text-[11px] text-slate-400 font-mono font-medium">CONGRUENCE vs. CHAOS</label>
-                <span className="text-[11px] bg-cyan-500/10 text-cyan-400 px-2 py-0.5 rounded font-mono">{(chaos * 100).toFixed(0)}%</span>
-              </div>
-              <input type="range" min="0" max="1" step="0.01" value={chaos} onChange={e => setChaos(parseFloat(e.target.value))} className="w-full accent-cyan-500 bg-slate-900 rounded-full h-1.5 appearance-none cursor-pointer" />
-              <p className="text-[10px] text-slate-500 mt-1.5 leading-relaxed">Adjusts stochastic probability. Low = Standard harmonic ratios. High = Non-idiomatic textures.</p>
-            </div>
+        // --- 7. PHYSICS & SYNC LOOP ---
+        function loop() {
+            let now = performance.now();
+            fpsRolling = (fpsRolling * 0.9) + ((1000 / Math.max(1, now - lastFrameTime)) * 0.1);
+            lastFrameTime = now;
             
-            <div>
-              <div className="flex justify-between mb-3">
-                <label className="text-[11px] text-slate-400 font-mono font-medium">RHYTHMIC DENSITY</label>
-                <span className="text-[11px] bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded font-mono">{(density * 100).toFixed(0)}%</span>
-              </div>
-              <input type="range" min="0" max="1" step="0.01" value={density} onChange={e => setDensity(parseFloat(e.target.value))} className="w-full accent-purple-500 bg-slate-900 rounded-full h-1.5 appearance-none cursor-pointer" />
-              <p className="text-[10px] text-slate-500 mt-1.5 leading-relaxed">Complexity of events across the generated percussion network.</p>
-            </div>
+            const perfEl = document.getElementById('perf-indicator');
+            if (fpsRolling < 30) { CHUNK_SIZE = Math.max(50, CHUNK_SIZE - 5); perfEl.textContent = "Compute: Throttled"; perfEl.className = "text-[10px] font-mono text-red-400 uppercase font-bold hidden md:block"; }
+            else if (fpsRolling > 55) { CHUNK_SIZE = Math.min(800, CHUNK_SIZE + 2); perfEl.textContent = "Compute: Unleashed"; perfEl.className = "text-[10px] font-mono text-emerald-400 uppercase font-bold hidden md:block"; }
 
-            <div>
-              <div className="flex justify-between mb-3">
-                <label className="text-[11px] text-slate-400 font-mono font-medium">DNODR MICRO-TIMING (SWING)</label>
-                <span className="text-[11px] bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded font-mono">{swing}%</span>
-              </div>
-              <input type="range" min="0" max="100" step="1" value={swing} onChange={e => setSwing(parseInt(e.target.value))} className="w-full accent-amber-500 bg-slate-900 rounded-full h-1.5 appearance-none cursor-pointer" />
-            </div>
+            for(let c=0; c < CHUNK_SIZE; c++) {
+                balls.forEach((b, i) => b.update(shadowBalls[i]));
+                shadowBalls.forEach(b => b.update(null)); 
+                applyExclusionPrinciple();
+                checkInversion();
+                ticks++;
+            }
             
-            <div>
-              <div className="flex justify-between mb-3">
-                <label className="text-[11px] text-slate-400 font-mono font-medium">PLP INTERNAL TEMPO</label>
-                <span className="text-[11px] bg-slate-700 text-slate-300 px-2 py-0.5 rounded font-mono">{bpm} BPM</span>
-              </div>
-              <input type="range" min="60" max="180" step="1" value={bpm} onChange={e => setBpm(parseInt(e.target.value))} className="w-full accent-slate-400 bg-slate-900 rounded-full h-1.5 appearance-none cursor-pointer" />
-            </div>
-          </div>
-        </div>
+            draw();
+            
+            // Log known yields silently
+            if (dbConnected && ticks % 30000 === 0 && chaosRatio < 8.0 && !knownHashes.has(currentConfigHash)) {
+                knownHashes.add(currentConfigHash);
+                supabase.from('museum').upsert({ hash: currentConfigHash, chaos_ratio: chaosRatio.toFixed(2), tick_detected: ticks }).catch(e=>console.error(e));
+            }
+            requestAnimationFrame(loop);
+        }
 
-        {/* COLUMN 3: STOCHASTIC ORCHESTRATION */}
-        <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col">
-           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-             <Radio className="w-4 h-4 text-emerald-400" /> Multi-Track Synthesis
-          </h2>
-          
-          <div className="flex-1 bg-[#0a0f18] rounded-xl border border-slate-800/80 mb-5 overflow-hidden relative shadow-inner">
-             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block" width={400} height={200} />
-          </div>
+        // --- BACKGROUND SWARM MEMORY ---
+        function loadMuseumSupabase() {
+            supabase.from('museum').select('hash').limit(2000)
+                .then(({ data, error }) => {
+                    if (error) {
+                        dbConnected = false;
+                        if (error.code === 'PGRST205' || error.code === '42P01') museumTableExists = false;
+                        return;
+                    }
+                    dbConnected = true;
+                    if (data) data.forEach(item => knownHashes.add(item.hash));
+                    
+                    supabase.channel('custom-all-channel')
+                        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'museum' }, payload => {
+                            if (payload.new && payload.new.hash) knownHashes.add(payload.new.hash);
+                        }).subscribe();
+                });
+        }
 
-          <div className="mb-5 h-20 bg-slate-950 rounded-lg border border-slate-800/50 p-3 overflow-y-auto font-mono text-[9px] text-slate-500 flex flex-col-reverse relative shadow-inner">
-          <div className="absolute top-2 right-2 flex items-center gap-2">
-             <div className="flex items-center gap-1 bg-slate-900 px-2 py-0.5 rounded">
-                <Database className="w-3 h-3 text-slate-500" />
-                <span className="text-slate-500 font-bold">{collectiveMemory.length}</span>
-             </div>
-             <Activity className="w-3 h-3 text-slate-600" />
-          </div>
-          {log.map((msg, i) => (
-            <div key={i} className="mb-1">{msg}</div>
-          ))}
-        </div>
+        // --- 8. UI CONTROLS ---
+        const title = document.getElementById('engine-title');
+        const tabPlat = document.getElementById('tab-platonic');
+        const tabDisc = document.getElementById('tab-discovery');
+        const geoCont = document.getElementById('geo-selector-container');
 
-        <button 
-            onClick={togglePlay}
-            className={`w-full py-4 rounded-xl flex justify-center items-center gap-3 font-bold text-sm tracking-wide shadow-xl transition-all duration-300 uppercase ${isPlaying ? 'bg-rose-500 hover:bg-rose-600 text-white shadow-rose-500/20' : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/20'}`}
-          >
-            {isPlaying ? <Square className="w-4 h-4" fill="currentColor" /> : <Play className="w-4 h-4" fill="currentColor" />}
-            {isPlaying ? 'Halt Orchestration' : 'Start Co-Creation Agent'}
-          </button>
-        </div>
+        tabPlat.onclick = () => {
+            simMode = 'platonic';
+            title.textContent = "Platonic Boundary Sim";
+            title.className = "text-xl md:text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-indigo-500 transition-all duration-500";
+            tabPlat.className = "glass-panel px-4 py-2 rounded-lg text-sky-400 font-bold border-b-2 border-b-sky-400 transition-all";
+            tabDisc.className = "glass-panel px-4 py-2 rounded-lg text-slate-400 hover:text-purple-300 transition-all";
+            geoCont.style.display = 'flex';
+            initBalls();
+        };
 
-      </div>
-    </div>
-  );
-}
+        tabDisc.onclick = () => {
+            simMode = 'discovery';
+            title.textContent = "Boundary Discovery Engine";
+            title.className = "text-xl md:text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-500 transition-all duration-500";
+            tabDisc.className = "glass-panel px-4 py-2 rounded-lg text-purple-400 font-bold border-b-2 border-b-purple-400 transition-all";
+            tabPlat.className = "glass-panel px-4 py-2 rounded-lg text-slate-400 hover:text-sky-300 transition-all";
+            geoCont.style.display = 'none';
+            initBalls();
+        };
+
+        document.getElementById('geo-select').onchange = (e) => {
+            currentGeoName = e.target.value;
+            activeGeo = geometries[currentGeoName];
+            initBalls();
+        };
+
+        // --- STARTUP ---
+        window.addEventListener('load', () => {
+            resizeCanvas();
+            loadMuseumSupabase(); 
+            initBalls();
+            loop();
+        });
+    </script>
+</body>
+</html>
