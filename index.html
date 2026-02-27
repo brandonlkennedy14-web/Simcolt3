@@ -37,9 +37,9 @@
     <!-- FOREGROUND SCROLLABLE UI LAYER -->
     <div class="absolute inset-0 z-10 flex flex-col p-3 md:p-6 pointer-events-none overflow-y-auto overflow-x-hidden">
         
-        <!-- Top Navigation & Controls (Shrink-0 prevents it from squishing) -->
+        <!-- Top Navigation & Controls -->
         <div class="w-full max-w-7xl mx-auto shrink-0 pointer-events-auto">
-            <div class="glass-panel rounded-2xl p-4 md:p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div class="glass-panel rounded-2xl p-4 md:p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-t-2 border-t-sky-500">
                 <div>
                     <h1 class="text-2xl md:text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-indigo-500">Platonic Boundary Sim</h1>
                     <p class="text-slate-300 text-[10px] md:text-sm mt-1">
@@ -144,11 +144,9 @@
 
         let supabase = null;
         let dbConnected = false;
-        let museumTableExists = true; // Assume true until proven false
+        let museumTableExists = true; 
         try {
-            if (SUPABASE_URL !== 'YOUR_SUPABASE_URL') {
-                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-            }
+            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         } catch (e) { console.error("Supabase init error:", e); }
 
         // --- 2. CANVAS & RESPONSIVE SETUP ---
@@ -157,7 +155,6 @@
         let width, height, CENTER_X, CENTER_Y;
         let baseScale = 1;
 
-        // Global variables needed by resizeCanvas hoisted here
         const ST_H = 5; 
         const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#4f46e5', '#a855f7'];
         let bgPattern, fgPatterns = [];
@@ -214,7 +211,6 @@
 
         let bounds = { minX: -150, maxX: 150, minY: -150, maxY: 150 };
         
-        // DYNAMIC GEOMETRY ENGINE
         const geometries = {
             'Square': { type: 'poly', basePoints: [[-150,-150], [150,-150], [150,150], [-150,150]], scale: 1 },
             'Triangle': { type: 'poly', basePoints: [[0,-180], [156,90], [-156,90]], scale: 1 },
@@ -608,8 +604,6 @@
             supabase.from('museum').select('*').order('created_at', { ascending: false }).limit(20)
                 .then(({ data, error }) => {
                     if (error) {
-                        // Suppress the console error output specifically for PGRST205 to avoid log spam,
-                        // but still handle it gracefully in the UI.
                         if (error.code !== 'PGRST205' && error.code !== '42P01') {
                             console.error("Supabase fetch error:", error);
                         }
