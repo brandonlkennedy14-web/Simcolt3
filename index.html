@@ -143,6 +143,8 @@
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhvb2xtYm1uemJzdmNxZXlxdnlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDMwNDQsImV4cCI6MjA4NzAxOTA0NH0.ebTwMZ_byU6EXtuR0jynct64QO5ornQrCwElQ5b9TxQ';
 
         let supabase = null;
+        let dbConnected = false;
+        let museumTableExists = true; // Assume true until proven false
         try {
             if (SUPABASE_URL !== 'YOUR_SUPABASE_URL') {
                 supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -566,7 +568,7 @@
 
             drawMaster();
 
-            if (ticks % 30000 === 0 && chaosRatio < 8.0 && !knownHashes.has(currentConfigHash)) {
+            if (dbConnected && museumTableExists && ticks % 30000 === 0 && chaosRatio < 8.0 && !knownHashes.has(currentConfigHash)) {
                 saveStructureToSupabase();
             }
 
@@ -579,13 +581,20 @@
         }
 
         async function saveStructureToSupabase() {
-            if (!supabase) return;
+            if (!supabase || !dbConnected || !museumTableExists) return;
             knownHashes.add(currentConfigHash);
             try {
                 const { error } = await supabase.from('museum').upsert({ 
                     hash: currentConfigHash, chaos_ratio: chaosRatio.toFixed(2), inversions, tick_detected: ticks 
                 });
-                if (!error) {
+                if (error) {
+                     if (error.code === 'PGRST205' || error.code === '42P01') {
+                         console.error("Supabase upsert error: Table 'museum' not found.");
+                         museumTableExists = false;
+                     } else {
+                         console.error("Supabase upsert error:", error);
+                     }
+                } else {
                     document.getElementById('log').innerHTML = `<div class="text-emerald-400">Yield Found! Logged: ${currentConfigHash.substring(0,8)}</div>` + document.getElementById('log').innerHTML.slice(0, 300);
                 }
             } catch (e) { console.error(e); }
@@ -593,19 +602,55 @@
 
         function loadMuseumSupabase() {
             if (!supabase) return;
+            
+            const list = document.getElementById('museum-list');
+            
             supabase.from('museum').select('*').order('created_at', { ascending: false }).limit(20)
-                .then(({ data }) => renderMuseum(data));
-
-            supabase.channel('custom-all-channel')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'museum' }, payload => {
-                    document.getElementById('log').innerHTML = `<div class="text-sky-400">Swarm Sync...</div>` + document.getElementById('log').innerHTML.slice(0, 300);
-                    supabase.from('museum').select('*').order('created_at', { ascending: false }).limit(20)
-                        .then(({ data }) => renderMuseum(data));
-                }).subscribe();
+                .then(({ data, error }) => {
+                    if (error) {
+                        // Suppress the console error output specifically for PGRST205 to avoid log spam,
+                        // but still handle it gracefully in the UI.
+                        if (error.code !== 'PGRST205' && error.code !== '42P01') {
+                            console.error("Supabase fetch error:", error);
+                        }
+                        
+                        dbConnected = false;
+                        if (error.code === 'PGRST205' || error.code === '42P01') {
+                            museumTableExists = false;
+                            list.innerHTML = `<div class="text-red-400 italic text-center mt-4 text-[10px] p-2 border border-red-500/30 bg-red-900/20 rounded">Table 'museum' missing in Supabase.<br>Simulation running in local mode.</div>`;
+                        } else {
+                            list.innerHTML = `<div class="text-yellow-500 italic text-center mt-4 text-[10px]">Database connection error. Local mode active.</div>`;
+                        }
+                        return;
+                    }
+                    dbConnected = true;
+                    museumTableExists = true;
+                    renderMuseum(data || []);
+                    
+                    supabase.channel('custom-all-channel')
+                        .on('postgres_changes', { event: '*', schema: 'public', table: 'museum' }, payload => {
+                            document.getElementById('log').innerHTML = `<div class="text-sky-400">Swarm Sync...</div>` + document.getElementById('log').innerHTML.slice(0, 300);
+                            supabase.from('museum').select('*').order('created_at', { ascending: false }).limit(20)
+                                .then(({ data, error }) => {
+                                    if (!error) renderMuseum(data || []);
+                                });
+                        }).subscribe();
+                })
+                .catch(err => {
+                     console.error("Supabase connection error:", err);
+                     dbConnected = false;
+                     list.innerHTML = `<div class="text-yellow-500 italic text-center mt-4 text-[10px]">Database connection error. Local mode active.</div>`;
+                });
         }
 
         function renderMuseum(data) {
             const list = document.getElementById('museum-list');
+            
+            if (!data || data.length === 0) {
+                list.innerHTML = `<div class="text-slate-500 italic text-center mt-4 text-[10px]">No structures found yet.</div>`;
+                return;
+            }
+            
             list.innerHTML = '';
             data.forEach(item => {
                 knownHashes.add(item.hash);
