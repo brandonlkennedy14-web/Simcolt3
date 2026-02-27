@@ -20,8 +20,12 @@
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
         }
         
-        @keyframes shimmer { 100% { transform: translateX(100%); } }
-        .animate-shimmer { animation: shimmer 2s infinite; }
+        select {
+            background-color: #0f172a;
+            color: #38bdf8;
+            border: 1px solid #334155;
+            outline: none;
+        }
     </style>
 </head>
 <body class="text-slate-100 h-screen w-screen font-sans">
@@ -32,14 +36,15 @@
     <!-- MINIMALIST UI OVERLAY -->
     <div class="absolute inset-0 z-10 flex flex-col p-3 md:p-6 pointer-events-none">
         
-        <!-- Header -->
+        <!-- Header Controls -->
         <div class="w-full max-w-7xl mx-auto shrink-0 pointer-events-auto">
             <div class="glass-panel rounded-2xl p-4 md:p-5 flex justify-between items-center border-t-2 border-t-sky-500/50">
                 <div>
-                    <h1 id="engine-title" class="text-xl md:text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-indigo-500">Platonic Boundary Sim</h1>
+                    <h1 id="engine-title" class="text-xl md:text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-indigo-500 transition-all duration-500">Platonic Boundary Sim</h1>
+                    
                     <div id="geo-selector-container" class="flex items-center gap-2 mt-2">
                         <span class="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Domain:</span>
-                        <select id="geo-select" class="bg-slate-900/80 text-sky-400 border border-slate-700 px-2 py-0.5 rounded text-[10px] font-mono outline-none cursor-pointer">
+                        <select id="geo-select" class="bg-slate-900/80 text-sky-400 border border-slate-700 px-2 py-0.5 rounded text-[10px] font-mono cursor-pointer transition">
                             <option value="Square">Square</option>
                             <option value="Triangle">Equilateral Triangle</option>
                             <option value="Hexagon">Regular Hexagon</option>
@@ -50,7 +55,7 @@
                 </div>
                 
                 <div class="flex gap-4 items-center">
-                    <span id="perf-indicator" class="text-[10px] font-mono text-emerald-400 uppercase font-bold hidden md:block">Scaling...</span>
+                    <span id="perf-indicator" class="text-[10px] font-mono text-emerald-400 uppercase font-bold hidden md:block">Compute: Balanced</span>
                     <a href="https://buymeacoffee.com/brandonkennedy" target="_blank" class="hover:scale-105 transition-transform duration-200">
                         <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 32px !important;width: 115px !important;" >
                     </a>
@@ -59,15 +64,14 @@
 
             <!-- NAVIGATION TABS -->
             <div class="mt-3 flex flex-wrap gap-3 text-[10px] md:text-xs font-mono tracking-wide">
-                <button id="tab-platonic" class="glass-panel px-3 py-1.5 rounded-lg text-sky-400 font-bold border-b-2 border-b-sky-400 transition">
-                    [1] Platonic Mode
+                <button id="tab-platonic" class="glass-panel px-4 py-2 rounded-lg text-sky-400 font-bold border-b-2 border-b-sky-400 transition-all">
+                    [1] PLATONIC BOUNDARIES
                 </button>
-                <button id="tab-discovery" class="glass-panel px-3 py-1.5 rounded-lg text-slate-400 hover:text-purple-300 transition">
-                    [2] Discovery Mode
+                <button id="tab-discovery" class="glass-panel px-4 py-2 rounded-lg text-slate-400 hover:text-purple-300 transition-all">
+                    [2] DISCOVERY ENGINE
                 </button>
             </div>
         </div>
-
     </div>
 
     <script type="module">
@@ -78,15 +82,17 @@
         const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         let dbConnected = false;
         let museumTableExists = true;
+        let knownHashes = new Set();
 
-        // --- 2. CANVAS & RESPONSIVE SETUP ---
+        // --- 2. GLOBAL CONSTANTS ---
+        const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#4f46e5', '#a855f7'];
+        const ST_H = 5; 
+        const ZETA_VOID_LIMIT = 2000; 
+
+        // --- 3. CANVAS & PATTERNS ---
         const canvas = document.getElementById('bg-canvas');
         const ctx = canvas.getContext('2d');
-        let width, height, CENTER_X, CENTER_Y;
-        let baseScale = 1;
-
-        const ST_H = 5; 
-        const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#4f46e5', '#a855f7'];
+        let width, height, CENTER_X, CENTER_Y, baseScale = 1;
         let bgPattern, fgPatterns = [];
 
         function initPatterns() {
@@ -98,6 +104,7 @@
                 bCtx.fillRect(0, i * ST_H, 1, ST_H);
             });
             bgPattern = ctx.createPattern(bgCanv, 'repeat');
+
             fgPatterns = colors.map((c, i) => {
                 let fgCanv = document.createElement('canvas');
                 fgCanv.width = 1; fgCanv.height = ST_H * 7;
@@ -118,24 +125,20 @@
             baseScale = Math.min(width, height) / 800; 
             initPatterns(); 
         }
-        
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas(); 
 
-        // --- 3. STATE & GEOMETRIES ---
-        let simMode = 'platonic'; // 'platonic' or 'discovery'
-        let CHUNK_SIZE = 300; 
-        const ZETA_VOID_LIMIT = 2000; 
+        // --- 4. ENGINE STATE ---
+        let simMode = 'platonic'; 
+        let currentGeoName = 'Square';
         let isRunning = true;
         let ticks = 0;
         let inversions = 0;
         let chaosRatio = 0.0;
-        let knownHashes = new Set();
         let currentConfigHash = "";
+        let CHUNK_SIZE = 300; 
         let lastFrameTime = performance.now();
         let fpsRolling = 60;
 
-        let discoveryBounds = { minX: -100, maxX: 100, minY: -100, maxY: 100 };
+        let discoveryBounds = { minX: -150, maxX: 150, minY: -150, maxY: 150 };
         const geometries = {
             'Square': { type: 'poly', basePoints: [[-150,-150], [150,-150], [150,150], [-150,150]], scale: 1 },
             'Triangle': { type: 'poly', basePoints: [[0,-180], [156,90], [-156,90]], scale: 1 },
@@ -154,7 +157,7 @@
             return activeGeo.basePoints.map(p => [p[0] * activeGeo.scale, p[1] * activeGeo.scale]);
         }
 
-        // --- 4. PHYSICS ---
+        // --- 5. ENTITY PHYSICS ---
         class Ball {
             constructor(groupId, isShadow = false) {
                 this.groupId = groupId;
@@ -173,16 +176,18 @@
                 this.winding = 0; 
                 this.ticksSinceHit = 0;
                 this.path = [];
+                this.lastAngle = undefined;
             }
             update(shadowBall) {
                 this.x += this.vx; this.y += this.vy; this.ticksSinceHit++;
                 if (!this.isShadow && shadowBall) {
-                    let div = Math.sqrt((this.x-shadowBall.x)**2 + (this.y-shadowBall.y)**2);
+                    let dx = this.x - shadowBall.x; let dy = this.y - shadowBall.y;
+                    let div = Math.sqrt(dx*dx + dy*dy);
                     chaosRatio = (chaosRatio * 0.999) + (div * 0.001); 
                 }
                 if (!this.isShadow && ticks % 5 === 0) {
                     this.path.push({x: this.x, y: this.y});
-                    if (this.path.length > 40) this.path.shift(); 
+                    if (this.path.length > 50) this.path.shift(); 
                 }
                 let angle = Math.atan2(this.y, this.x);
                 if (this.lastAngle !== undefined) {
@@ -193,6 +198,8 @@
                 }
                 this.lastAngle = angle;
                 this.checkBoundaries();
+                
+                // Zeta Void protocol (Fold back to origin if trapped in infinite loop)
                 if (this.ticksSinceHit > ZETA_VOID_LIMIT) {
                     this.x *= 0.1; this.y *= 0.1; this.vx *= -1; this.vy *= -1;
                     this.ticksSinceHit = 0;
@@ -201,6 +208,7 @@
             checkBoundaries() {
                 let hit = false;
                 if (simMode === 'discovery') {
+                    // Expanding Square Boundaries (Discovery Mode)
                     if (this.x < discoveryBounds.minX || this.x > discoveryBounds.maxX) {
                         if (this.type === 'blade') { discoveryBounds.minX -= 0.05; discoveryBounds.maxX += 0.05; }
                         this.vx *= -1; this.x = this.x < discoveryBounds.minX ? discoveryBounds.minX : discoveryBounds.maxX;
@@ -212,6 +220,7 @@
                         hit = true;
                     }
                 } else {
+                    // Expanding Platonic Geometry Boundaries
                     if (activeGeo.type === 'circle') {
                         let r = activeGeo.baseRadius * activeGeo.scale;
                         if (this.x*this.x + this.y*this.y > r*r) {
@@ -232,7 +241,11 @@
                             if (d < 0) {
                                 if (this.type === 'blade') activeGeo.scale += 0.0002;
                                 let dot = this.vx * (-nx) + this.vy * (-ny);
-                                if (dot > 0) { this.vx -= 2 * dot * (-nx); this.vy -= 2 * dot * (-ny); hit = true; }
+                                if (dot > 0) { 
+                                    this.vx -= 2 * dot * (-nx); this.vy -= 2 * dot * (-ny); 
+                                    this.x -= d * nx; this.y -= d * ny; // Push back inside
+                                    hit = true; 
+                                }
                             }
                         }
                     }
@@ -242,11 +255,18 @@
         }
 
         let balls = [], shadowBalls = [];
+        function generateHash() {
+            let str = balls.map(b => `${b.type}_${b.vx.toFixed(1)}_${b.vy.toFixed(1)}`).join('|');
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) hash = Math.imul(31, hash) + str.charCodeAt(i) | 0;
+            return (simMode === 'discovery' ? 'Disc_' : currentGeoName + '_') + Math.abs(hash).toString(16);
+        }
+
         function initBalls() {
             balls = []; shadowBalls = [];
-            discoveryBounds = { minX: -100, maxX: 100, minY: -100, maxY: 100 };
+            discoveryBounds = { minX: -150, maxX: 150, minY: -150, maxY: 150 };
             activeGeo.scale = 1.0;
-            ticks = 0;
+            ticks = 0; chaosRatio = 0; inversions = 0;
             for (let g = 0; g < 7; g++) {
                 for (let i = 0; i < 7; i++) {
                     let b = new Ball(g, false); balls.push(b);
@@ -254,65 +274,195 @@
                     shadowBalls.push(s);
                 }
             }
-            currentConfigHash = (simMode === 'discovery' ? 'Disc_' : 'Plat_') + Math.random().toString(16).slice(2,10);
+            currentConfigHash = generateHash();
+            if (knownHashes.has(currentConfigHash)) initBalls(); // Reroll if swarm already mapped this!
         }
 
-        // --- 5. RENDER ---
+        function applyExclusionPrinciple() {
+            for (let i = 0; i < balls.length; i++) {
+                for (let j = i + 1; j < balls.length; j++) {
+                    let dx = balls[i].x - balls[j].x; let dy = balls[i].y - balls[j].y;
+                    if (dx*dx + dy*dy < 25) { 
+                        let b1 = balls[i], b2 = balls[j];
+                        // Zero memory detonates to chaos
+                        if (Math.abs(b1.winding) < 0.1) { b1.vx = (Math.random()-0.5)*15; b1.vy = (Math.random()-0.5)*15; }
+                        // Higher memory asserts dominance
+                        if (Math.abs(b1.winding) > Math.abs(b2.winding)) { b2.vx *= -1.08; b2.vy *= -1.08; }
+                        else { b1.vx *= -1.08; b1.vy *= -1.08; }
+                    }
+                }
+            }
+        }
+
+        function checkInversion() {
+            // Map Inversion logic (Restored)
+            if (simMode === 'platonic' && activeGeo.scale > 4.5) { 
+                inversions++;
+                activeGeo.scale = 0.5; 
+                balls.forEach(b => { b.x *= 0.1; b.y *= 0.1; b.vx *= -1; b.vy *= -1; });
+            } else if (simMode === 'discovery' && (discoveryBounds.maxX - discoveryBounds.minX > 760)) {
+                inversions++;
+                discoveryBounds = { minX: -50, maxX: 50, minY: -50, maxY: 50 }; 
+                balls.forEach(b => { b.x *= 0.1; b.y *= 0.1; b.vx *= -1; b.vy *= -1; });
+            }
+        }
+
+        // --- 6. RENDER MASTER ---
         function draw() {
             ctx.clearRect(0, 0, width, height);
+            
+            // 1. GLOBAL MUNKER STRIPE BACKGROUND
             ctx.fillStyle = bgPattern; ctx.fillRect(0, 0, width, height);
+            
+            // 2. MASK NON-ACTIVE BOUNDS
             ctx.fillStyle = 'rgba(2, 6, 23, 0.7)';
-            ctx.beginPath(); ctx.rect(0, 0, width, height);
+            ctx.beginPath(); ctx.rect(0, 0, width, height); // Outer CW
+            
             if (simMode === 'discovery') {
                 ctx.rect(CENTER_X + discoveryBounds.minX*baseScale, CENTER_Y + discoveryBounds.minY*baseScale, (discoveryBounds.maxX-discoveryBounds.minX)*baseScale, (discoveryBounds.maxY-discoveryBounds.minY)*baseScale);
             } else if (activeGeo.type === 'circle') {
-                ctx.arc(CENTER_X, CENTER_Y, activeGeo.baseRadius * activeGeo.scale * baseScale, 0, Math.PI * 2, true);
+                ctx.arc(CENTER_X, CENTER_Y, activeGeo.baseRadius * activeGeo.scale * baseScale, 0, Math.PI * 2, true); // Inner CCW
             } else {
                 let pts = getScaledPoints(); ctx.moveTo(CENTER_X + pts[0][0]*baseScale, CENTER_Y + pts[0][1]*baseScale);
                 for(let i = pts.length - 1; i >= 0; i--) ctx.lineTo(CENTER_X + pts[i][0]*baseScale, CENTER_Y + pts[i][1]*baseScale);
             }
             ctx.fill("evenodd");
 
+            // 3. RULIAD GRAPH WARPED BY PHYSICS
+            ctx.lineWidth = 1.5;
             ctx.globalCompositeOperation = 'hard-light'; 
-            let maxDist = 150 * baseScale;
+            let maxDist = (simMode === 'discovery' ? 150 : 150 * activeGeo.scale) * baseScale;
+            
             for (let i = 0; i < balls.length; i++) {
                 for (let j = i + 1; j < balls.length; j++) {
-                    let dx = (balls[i].x - balls[j].x)*baseScale, dy = (balls[i].y - balls[j].y)*baseScale;
+                    let dx = balls[i].x*baseScale - balls[j].x*baseScale;
+                    let dy = balls[i].y*baseScale - balls[j].y*baseScale;
+                    if (Math.abs(dx) > maxDist || Math.abs(dy) > maxDist) continue;
+                    
                     let dist = Math.sqrt(dx*dx + dy*dy);
                     if (dist < maxDist) {
-                        ctx.beginPath(); ctx.moveTo(CENTER_X + balls[i].x*baseScale, CENTER_Y + balls[i].y*baseScale);
-                        ctx.lineTo(CENTER_X + balls[j].x*baseScale, CENTER_Y + balls[j].y*baseScale);
-                        ctx.strokeStyle = balls[i].color + '44'; ctx.lineWidth = 0.5; ctx.stroke();
+                        ctx.beginPath();
+                        ctx.moveTo(CENTER_X + balls[i].x*baseScale, CENTER_Y + balls[i].y*baseScale);
+
+                        let warpX = (balls[i].vx + balls[j].vx) * 10 * baseScale;
+                        let warpY = (balls[i].vy + balls[j].vy) * 10 * baseScale;
+
+                        ctx.bezierCurveTo(
+                            CENTER_X + balls[i].x*baseScale + warpX, CENTER_Y + balls[i].y*baseScale - warpY, 
+                            CENTER_X + balls[j].x*baseScale - warpX, CENTER_Y + balls[j].y*baseScale + warpY, 
+                            CENTER_X + balls[j].x*baseScale, CENTER_Y + balls[j].y*baseScale
+                        );
+
+                        let opacity = (1 - dist / maxDist) * 0.8;
+                        let grad = ctx.createLinearGradient(CENTER_X + balls[i].x*baseScale, CENTER_Y + balls[i].y*baseScale, CENTER_X + balls[j].x*baseScale, CENTER_Y + balls[j].y*baseScale);
+                        grad.addColorStop(0, balls[i].color + Math.floor(opacity*255).toString(16).padStart(2,'0'));
+                        grad.addColorStop(1, balls[j].color + Math.floor(opacity*255).toString(16).padStart(2,'0'));
+                        
+                        ctx.strokeStyle = grad;
+                        ctx.stroke();
                     }
                 }
             }
             ctx.globalCompositeOperation = 'source-over';
-            balls.forEach(b => {
-                ctx.beginPath(); ctx.arc(CENTER_X + b.x*baseScale, CENTER_Y + b.y*baseScale, (b.type === 'smith' ? 6 : 3) * baseScale, 0, Math.PI*2);
-                ctx.fillStyle = fgPatterns[b.groupId]; ctx.fill();
-            });
+
+            // 4. RENDER HISTORICAL TRAILS & MUNKER BALLS (RESTORED FULLY)
+            for (let g = 0; g < 7; g++) {
+                let groupBalls = balls.filter(b => b.groupId === g);
+                
+                // Draw Trails (Quadratic Curves)
+                groupBalls.forEach(b => {
+                    if (b.path.length > 0) {
+                        ctx.beginPath();
+                        ctx.moveTo(CENTER_X + b.path[0].x*baseScale, CENTER_Y + b.path[0].y*baseScale);
+                        for (let i = 1; i < b.path.length; i++) {
+                            let xc = CENTER_X + (b.path[i-1].x + b.path[i].x)/2 * baseScale;
+                            let yc = CENTER_Y + (b.path[i-1].y + b.path[i].y)/2 * baseScale;
+                            ctx.quadraticCurveTo(CENTER_X + b.path[i-1].x*baseScale, CENTER_Y + b.path[i-1].y*baseScale, xc, yc);
+                        }
+                        ctx.lineTo(CENTER_X + b.x*baseScale, CENTER_Y + b.y*baseScale);
+                        
+                        ctx.lineWidth = b.type === 'smith' ? 4 : 2; 
+                        ctx.strokeStyle = '#94a3b8'; ctx.stroke(); // Grey Base
+                        if(fgPatterns[g]) {
+                            ctx.strokeStyle = fgPatterns[g]; ctx.stroke(); // Munker Color Layer
+                        }
+                    }
+                });
+
+                // Draw Bodies
+                groupBalls.forEach(b => {
+                    ctx.beginPath();
+                    ctx.arc(CENTER_X + b.x*baseScale, CENTER_Y + b.y*baseScale, (b.type === 'smith' ? 8 : 5) * baseScale, 0, Math.PI * 2);
+                    ctx.fillStyle = '#94a3b8'; ctx.fill(); // Grey Base
+                    if(fgPatterns[g]) {
+                        ctx.fillStyle = fgPatterns[g]; ctx.fill(); // Munker Color Layer
+                    }
+                });
+            }
+
+            // 5. DRAW BOUNDARY OUTLINES
+            ctx.strokeStyle = '#334155';
+            ctx.lineWidth = 3;
+            if (simMode === 'discovery') {
+                ctx.strokeRect(CENTER_X + discoveryBounds.minX*baseScale, CENTER_Y + discoveryBounds.minY*baseScale, (discoveryBounds.maxX - discoveryBounds.minX)*baseScale, (discoveryBounds.maxY - discoveryBounds.minY)*baseScale);
+            } else if (activeGeo.type === 'circle') {
+                ctx.beginPath(); ctx.arc(CENTER_X, CENTER_Y, activeGeo.baseRadius * activeGeo.scale * baseScale, 0, Math.PI * 2); ctx.stroke();
+            } else {
+                let pts = getScaledPoints();
+                ctx.beginPath(); ctx.moveTo(CENTER_X + pts[0][0]*baseScale, CENTER_Y + pts[0][1]*baseScale);
+                for(let i=1; i<pts.length; i++) ctx.lineTo(CENTER_X + pts[i][0]*baseScale, CENTER_Y + pts[i][1]*baseScale);
+                ctx.closePath(); ctx.stroke();
+            }
         }
 
+        // --- 7. PHYSICS & SYNC LOOP ---
         function loop() {
             let now = performance.now();
-            fpsRolling = (fpsRolling * 0.9) + ((1000 / (now - lastFrameTime)) * 0.1);
+            fpsRolling = (fpsRolling * 0.9) + ((1000 / Math.max(1, now - lastFrameTime)) * 0.1);
             lastFrameTime = now;
-            if (fpsRolling < 30) CHUNK_SIZE = Math.max(50, CHUNK_SIZE - 10);
-            else if (fpsRolling > 55) CHUNK_SIZE = Math.min(800, CHUNK_SIZE + 5);
+            
+            const perfEl = document.getElementById('perf-indicator');
+            if (fpsRolling < 30) { CHUNK_SIZE = Math.max(50, CHUNK_SIZE - 5); perfEl.textContent = "Compute: Throttled"; perfEl.className = "text-[10px] font-mono text-red-400 uppercase font-bold hidden md:block"; }
+            else if (fpsRolling > 55) { CHUNK_SIZE = Math.min(800, CHUNK_SIZE + 2); perfEl.textContent = "Compute: Unleashed"; perfEl.className = "text-[10px] font-mono text-emerald-400 uppercase font-bold hidden md:block"; }
 
             for(let c=0; c < CHUNK_SIZE; c++) {
                 balls.forEach((b, i) => b.update(shadowBalls[i]));
                 shadowBalls.forEach(b => b.update(null)); 
+                applyExclusionPrinciple();
+                checkInversion();
                 ticks++;
             }
+            
             draw();
-            if (dbConnected && ticks % 30000 === 0) {
-                supabase.from('museum').upsert({ hash: currentConfigHash, chaos_ratio: chaosRatio.toFixed(2), tick_detected: ticks });
+            
+            // Log known yields silently
+            if (dbConnected && ticks % 30000 === 0 && chaosRatio < 8.0 && !knownHashes.has(currentConfigHash)) {
+                knownHashes.add(currentConfigHash);
+                supabase.from('museum').upsert({ hash: currentConfigHash, chaos_ratio: chaosRatio.toFixed(2), tick_detected: ticks }).catch(e=>console.error(e));
             }
             requestAnimationFrame(loop);
         }
 
-        // --- 6. INTERFACE ---
+        // --- BACKGROUND SWARM MEMORY ---
+        function loadMuseumSupabase() {
+            supabase.from('museum').select('hash').limit(2000)
+                .then(({ data, error }) => {
+                    if (error) {
+                        dbConnected = false;
+                        if (error.code === 'PGRST205' || error.code === '42P01') museumTableExists = false;
+                        return;
+                    }
+                    dbConnected = true;
+                    if (data) data.forEach(item => knownHashes.add(item.hash));
+                    
+                    supabase.channel('custom-all-channel')
+                        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'museum' }, payload => {
+                            if (payload.new && payload.new.hash) knownHashes.add(payload.new.hash);
+                        }).subscribe();
+                });
+        }
+
+        // --- 8. UI CONTROLS ---
         const title = document.getElementById('engine-title');
         const tabPlat = document.getElementById('tab-platonic');
         const tabDisc = document.getElementById('tab-discovery');
@@ -321,9 +471,9 @@
         tabPlat.onclick = () => {
             simMode = 'platonic';
             title.textContent = "Platonic Boundary Sim";
-            title.className = "text-xl md:text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-indigo-500";
-            tabPlat.className = "glass-panel px-3 py-1.5 rounded-lg text-sky-400 font-bold border-b-2 border-b-sky-400 transition";
-            tabDisc.className = "glass-panel px-3 py-1.5 rounded-lg text-slate-400 hover:text-purple-300 transition";
+            title.className = "text-xl md:text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-indigo-500 transition-all duration-500";
+            tabPlat.className = "glass-panel px-4 py-2 rounded-lg text-sky-400 font-bold border-b-2 border-b-sky-400 transition-all";
+            tabDisc.className = "glass-panel px-4 py-2 rounded-lg text-slate-400 hover:text-purple-300 transition-all";
             geoCont.style.display = 'flex';
             initBalls();
         };
@@ -331,22 +481,26 @@
         tabDisc.onclick = () => {
             simMode = 'discovery';
             title.textContent = "Boundary Discovery Engine";
-            title.className = "text-xl md:text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-500";
-            tabDisc.className = "glass-panel px-3 py-1.5 rounded-lg text-purple-400 font-bold border-b-2 border-b-purple-400 transition";
-            tabPlat.className = "glass-panel px-3 py-1.5 rounded-lg text-slate-400 hover:text-sky-300 transition";
+            title.className = "text-xl md:text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-500 transition-all duration-500";
+            tabDisc.className = "glass-panel px-4 py-2 rounded-lg text-purple-400 font-bold border-b-2 border-b-purple-400 transition-all";
+            tabPlat.className = "glass-panel px-4 py-2 rounded-lg text-slate-400 hover:text-sky-300 transition-all";
             geoCont.style.display = 'none';
             initBalls();
         };
 
         document.getElementById('geo-select').onchange = (e) => {
-            activeGeo = geometries[e.target.value];
+            currentGeoName = e.target.value;
+            activeGeo = geometries[currentGeoName];
             initBalls();
         };
 
-        // START
-        initBalls();
-        supabase.from('museum').select('count').then(({error}) => { if(!error) dbConnected = true; });
-        loop();
+        // --- STARTUP ---
+        window.addEventListener('load', () => {
+            resizeCanvas();
+            loadMuseumSupabase(); 
+            initBalls();
+            loop();
+        });
     </script>
 </body>
 </html>
