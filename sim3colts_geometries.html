@@ -3,97 +3,150 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>sim3colts - Multi-Geometry Supabase Engine</title>
+    <title>sim3colts - Boundary Discovery Engine</title>
     <script src="https://cdn.tailwindcss.com"></script>
-
+    
     <!-- SUPABASE CLIENT -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <style>
-        @keyframes shimmer {
-            100% { transform: translateX(100%); }
+        body { margin: 0; overflow: hidden; background-color: #020617; }
+        
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
         }
-        .animate-shimmer {
-            animation: shimmer 2s infinite;
-        }
-        select {
-            background-color: #0f172a;
-            color: #38bdf8;
-            border: 1px solid #334155;
-            padding: 4px 8px;
-            border-radius: 6px;
-            font-family: monospace;
-            outline: none;
-        }
+        
+        @keyframes shimmer { 100% { transform: translateX(100%); } }
+        .animate-shimmer { animation: shimmer 2s infinite; }
+        
+        /* Smooth scrolling for the UI overlay */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.5); border-radius: 10px; }
     </style>
+</head>
+<body class="text-slate-100 h-screen w-screen font-sans">
+    
+    <!-- FULLSCREEN COMPOSITE SIMULATION CANVAS -->
+    <canvas id="bg-canvas" class="fixed inset-0 w-full h-full z-0"></canvas>
+
+    <!-- FOREGROUND SCROLLABLE UI LAYER -->
+    <div class="absolute inset-0 z-10 flex flex-col p-3 md:p-6 pointer-events-none overflow-y-auto overflow-x-hidden">
+        
+        <!-- Top Navigation & Controls -->
+        <div class="w-full max-w-7xl mx-auto shrink-0 pointer-events-auto">
+            <div class="glass-panel rounded-2xl p-4 md:p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <h1 class="text-2xl md:text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-500">Boundary Discovery Engine</h1>
+                    <p class="text-slate-300 text-[10px] md:text-sm mt-1">
+                        Autonomous Geometric Expansion | 
+                        <span id="perf-indicator" class="text-emerald-400 font-mono font-bold">Auto-Scaling...</span>
+                    </p>
+                </div>
+                
+                <div class="flex gap-4 items-center">
+                    <a href="https://buymeacoffee.com/brandonkennedy" target="_blank" class="hover:scale-105 transition-transform duration-200">
+                        <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 36px !important;width: 130px !important;" >
+                    </a>
+                </div>
+            </div>
+
+            <!-- NAVIGATION TABS -->
+            <div class="mt-3 flex flex-wrap gap-3 text-[10px] md:text-xs font-mono tracking-wide">
+                <a href="../index.html" class="glass-panel px-3 py-1.5 rounded-lg text-slate-400 hover:text-sky-300 transition">
+                    [1] Platonic Boundary Sim
+                </a>
+                <a href="#" class="glass-panel px-3 py-1.5 rounded-lg text-purple-400 font-bold border-b-2 border-b-purple-400">
+                    [2] Boundary Discovery Engine
+                </a>
+            </div>
+        </div>
+
+        <!-- TRANSPARENT VIEWING WINDOW -->
+        <div class="flex-1 min-h-[45vh] md:min-h-0 pointer-events-none shrink-0"></div>
+
+        <!-- Distributed Network HUD -->
+        <div class="w-full max-w-7xl mx-auto mt-4 md:mt-auto flex flex-col md:flex-row gap-4 items-stretch md:items-end pointer-events-none shrink-0 pb-4">
+            
+            <!-- Telemetry Stats -->
+            <div class="glass-panel p-4 md:p-5 rounded-2xl w-full md:w-64 pointer-events-auto flex flex-col justify-between">
+                <div>
+                    <h2 class="font-bold text-slate-200 border-b border-slate-700/50 pb-2 uppercase tracking-widest text-[10px] mb-3">Node Telemetry</h2>
+                    <div class="grid grid-cols-2 md:grid-cols-1 gap-3 md:gap-4">
+                        <div>
+                            <span class="block text-[9px] md:text-[10px] text-slate-400 uppercase tracking-widest">Compute Ticks</span>
+                            <span id="stat-ticks" class="text-lg md:text-xl font-mono text-emerald-400">0</span>
+                        </div>
+                        <div>
+                            <span class="block text-[9px] md:text-[10px] text-slate-400 uppercase tracking-widest">Chaos Ratio</span>
+                            <span id="stat-chaos" class="text-lg md:text-xl font-mono text-red-400">0.00</span>
+                        </div>
+                        <div>
+                            <span class="block text-[9px] md:text-[10px] text-slate-400 uppercase tracking-widest">Avg Memory</span>
+                            <span id="stat-winding" class="text-lg md:text-xl font-mono text-purple-400">0.00</span>
+                        </div>
+                        <div>
+                            <span class="block text-[9px] md:text-[10px] text-slate-400 uppercase tracking-widest">Map Inversions</span>
+                            <span id="stat-inversions" class="text-lg md:text-xl font-mono text-pink-400">0</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-4 md:mt-6 bg-purple-900/30 border border-purple-500/30 p-2 md:p-3 rounded-lg text-center relative overflow-hidden">
+                    <div class="absolute inset-0 bg-gradient-to-r from-transparent via-purple-500/10 to-transparent -translate-x-full animate-shimmer"></div>
+                    <span class="text-purple-400 font-mono text-[9px] md:text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 relative z-10">
+                        <span class="w-1.5 h-1.5 bg-purple-400 rounded-full shadow-[0_0_8px_#c084fc] animate-pulse"></span>
+                        Discovery Active
+                    </span>
+                </div>
+            </div>
+
+            <!-- Supabase Sync & Logs -->
+            <div class="flex-1 flex flex-col sm:flex-row md:flex-col gap-4 w-full pointer-events-auto md:max-w-sm">
+                <div class="glass-panel p-4 rounded-xl flex flex-col h-32 md:h-40 flex-1">
+                    <span class="block text-slate-400 text-[10px] uppercase tracking-widest mb-2 border-b border-slate-700/50 pb-1">Event Log</span>
+                    <div id="log" class="flex-1 overflow-y-auto space-y-1 font-mono text-[9px] md:text-[10px] text-slate-300 break-words"></div>
+                </div>
+                
+                <div class="glass-panel p-4 rounded-xl flex flex-col h-40 md:h-48 flex-1">
+                    <span class="block text-slate-400 text-[10px] uppercase tracking-widest mb-2 border-b border-slate-700/50 pb-1 flex justify-between items-center">
+                        <span>Supabase Brain</span>
+                        <span class="text-emerald-500 animate-pulse text-[8px] md:text-[10px]">Live Sync</span>
+                    </span>
+                    <div id="museum-list" class="flex-1 overflow-y-auto space-y-2 pr-2 text-[10px] md:text-xs">
+                        <div class="text-slate-500 italic text-center mt-4 text-[10px]">Connecting to Swarm...</div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
 
     <script type="module">
         // --- 1. SUPABASE INTEGRATION ---
-        // PASTE YOUR SUPABASE CREDENTIALS HERE
-        const SUPABASE_URL = 'YOUR_SUPABASE_URL'; 
-        const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+        const SUPABASE_URL = 'https://xoolmbmnzbsvcqeyqvyi.supabase.co'; 
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhvb2xtYm1uemJzdmNxZXlxdnlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDMwNDQsImV4cCI6MjA4NzAxOTA0NH0.ebTwMZ_byU6EXtuR0jynct64QO5ornQrCwElQ5b9TxQ';
 
         let supabase = null;
+        let dbConnected = false;
+        let museumTableExists = true; 
         try {
-            if (SUPABASE_URL !== 'YOUR_SUPABASE_URL') {
-                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-            } else {
-                console.warn("Supabase not connected. Add URL/Key at the top of the script.");
-            }
-        } catch (e) {
-            console.error("Supabase init error:", e);
-        }
+            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        } catch (e) { console.error("Supabase init error:", e); }
 
-        // --- 2. SIMULATION CONSTANTS & UI ---
-        const simCanvas = document.getElementById('sim-canvas');
-        const sCtx = simCanvas.getContext('2d');
+        // --- 2. CANVAS & RESPONSIVE SETUP ---
+        const canvas = document.getElementById('bg-canvas');
+        const ctx = canvas.getContext('2d');
+        let width, height, CENTER_X, CENTER_Y;
+        let baseScale = 1;
 
-        const CANVAS_SIZE = 800; 
-        const CENTER = CANVAS_SIZE / 2;
-        const CHUNK_SIZE = 400; 
-        const ZETA_VOID_LIMIT = 2000; 
-
-        let isRunning = false;
-        let animationId = null;
-        let ticks = 0;
-        let inversions = 0;
-        let chaosRatio = 0.0;
-        let knownHashes = new Set();
-        let currentConfigHash = "";
-
+        // Global variables
+        const ST_H = 5; 
         const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#4f46e5', '#a855f7'];
-
-        // --- 3. DYNAMIC GEOMETRY ENGINE ---
-        const geometries = {
-            'Square': { type: 'poly', basePoints: [[-100,-100], [100,-100], [100,100], [-100,100]], scale: 1 },
-            'Triangle': { type: 'poly', basePoints: [[0,-120], [104,60], [-104,60]], scale: 1 },
-            'Hexagon': { type: 'poly', basePoints: [], scale: 1 },
-            'Octagon': { type: 'poly', basePoints: [], scale: 1 },
-            'Circle': { type: 'circle', baseRadius: 100, scale: 1 }
-        };
-
-        // Procedurally generate Hexagon
-        for(let i=0; i<6; i++) {
-            let angle = i * Math.PI / 3 - Math.PI/6;
-            geometries['Hexagon'].basePoints.push([Math.cos(angle)*110, Math.sin(angle)*110]);
-        }
-        
-        // Procedurally generate Octagon
-        for(let i=0; i<8; i++) {
-            let angle = i * Math.PI / 4 - Math.PI/8;
-            geometries['Octagon'].basePoints.push([Math.cos(angle)*110, Math.sin(angle)*110]);
-        }
-
-        let currentGeoName = 'Square';
-        let activeGeo = geometries[currentGeoName];
-
-        function getScaledPoints() {
-            if (activeGeo.type !== 'poly') return [];
-            return activeGeo.basePoints.map(p => [p[0] * activeGeo.scale, p[1] * activeGeo.scale]);
-        }
-
-        // --- 4. GLOBAL PATTERN GENERATION FOR TRUE MUNKER-WHITE ---
-        const ST_H = 4; 
         let bgPattern, fgPatterns = [];
 
         function initPatterns() {
@@ -104,7 +157,7 @@
                 bCtx.fillStyle = c;
                 bCtx.fillRect(0, i * ST_H, 1, ST_H);
             });
-            bgPattern = sCtx.createPattern(bgCanv, 'repeat');
+            bgPattern = ctx.createPattern(bgCanv, 'repeat');
 
             fgPatterns = colors.map((c, i) => {
                 let fgCanv = document.createElement('canvas');
@@ -112,12 +165,45 @@
                 let fCtx = fgCanv.getContext('2d');
                 fCtx.fillStyle = c;
                 fCtx.fillRect(0, i * ST_H, 1, ST_H);
-                return sCtx.createPattern(fgCanv, 'repeat');
+                return ctx.createPattern(fgCanv, 'repeat');
             });
         }
-        initPatterns();
 
-        // --- 5. PHYSICS & LOGIC ENTITIES ---
+        function resizeCanvas() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+            CENTER_X = width / 2;
+            CENTER_Y = window.innerWidth < 768 ? height * 0.45 : height / 2;
+            
+            baseScale = Math.min(width, height) / 800; 
+            initPatterns(); 
+        }
+        
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas(); 
+
+        // --- 3. SIMULATION CONSTANTS ---
+        let CHUNK_SIZE = 300; 
+        const ZETA_VOID_LIMIT = 2000; 
+        
+        let isRunning = false;
+        let ticks = 0;
+        let inversions = 0;
+        let chaosRatio = 0.0;
+        let knownHashes = new Set();
+        let currentConfigHash = "";
+
+        let lastFrameTime = performance.now();
+        let fpsRolling = 60;
+        const perfIndicator = document.getElementById('perf-indicator');
+
+        // Dynamic Bounds that expand as blades hit them
+        let bounds = { minX: -100, maxX: 100, minY: -100, maxY: 100 };
+        const MAX_BOUNDS = 380;
+
+        // --- 4. PHYSICS ENTITIES (49 BODIES) ---
         class Ball {
             constructor(groupId, isShadow = false) {
                 this.groupId = groupId;
@@ -128,16 +214,12 @@
             }
 
             reset(perturbation = 0) {
-                // Ensure spawn is within bounds (cluster near origin)
-                this.x = (Math.random() * 40 - 20);
-                this.y = (Math.random() * 40 - 20);
-
+                this.x = (Math.random() * 80 - 40);
+                this.y = (Math.random() * 80 - 40);
                 let angle = Math.random() * Math.PI * 2;
-                let speed = this.type === 'blade' ? 2.2 : 1.1; 
-
+                let speed = this.type === 'blade' ? 2.5 : 1.2; 
                 this.vx = Math.cos(angle) * speed + perturbation;
                 this.vy = Math.sin(angle) * speed + perturbation;
-
                 this.winding = 0; 
                 this.ticksSinceHit = 0;
                 this.path = [];
@@ -151,21 +233,21 @@
                 if (!this.isShadow && shadowBall) {
                     let dx = this.x - shadowBall.x;
                     let dy = this.y - shadowBall.y;
-                    let divergence = Math.sqrt(dx*dx + dy*dy);
-                    chaosRatio = (chaosRatio * 0.999) + (divergence * 0.001); 
+                    let div = Math.sqrt(dx*dx + dy*dy);
+                    chaosRatio = (chaosRatio * 0.999) + (div * 0.001); 
                 }
 
                 if (!this.isShadow && ticks % 5 === 0) {
                     this.path.push({x: this.x, y: this.y});
-                    if (this.path.length > 80) this.path.shift(); 
+                    if (this.path.length > 50) this.path.shift(); 
                 }
 
                 let angle = Math.atan2(this.y, this.x);
                 if (this.lastAngle !== undefined) {
-                    let dAngle = angle - this.lastAngle;
-                    if (dAngle > Math.PI) dAngle -= 2 * Math.PI;
-                    if (dAngle < -Math.PI) dAngle += 2 * Math.PI;
-                    this.winding += dAngle / (2 * Math.PI);
+                    let da = angle - this.lastAngle;
+                    if (da > Math.PI) da -= 2 * Math.PI;
+                    if (da < -Math.PI) da += 2 * Math.PI;
+                    this.winding += da / (2 * Math.PI);
                 }
                 this.lastAngle = angle;
 
@@ -175,148 +257,74 @@
 
             checkBoundaries() {
                 let hit = false;
-
-                if (activeGeo.type === 'circle') {
-                    let r = activeGeo.baseRadius * activeGeo.scale;
-                    let distSq = this.x*this.x + this.y*this.y;
-                    
-                    if (distSq > r*r) {
-                        let dist = Math.sqrt(distSq);
-                        if (this.type === 'blade') activeGeo.scale += 0.0003;
-                        
-                        let nx = this.x / dist;
-                        let ny = this.y / dist;
-                        let dot = this.vx * nx + this.vy * ny;
-                        
-                        if (dot > 0) { // Moving outward
-                            this.vx -= 2 * dot * nx;
-                            this.vy -= 2 * dot * ny;
-                            this.x = nx * r; // Push to edge
-                            this.y = ny * r;
-                            hit = true;
-                        }
+                if (this.x < bounds.minX || this.x > bounds.maxX) {
+                    if (this.type === 'blade') {
+                        bounds.minX -= 0.05; bounds.maxX += 0.05;
                     }
-                } 
-                else if (activeGeo.type === 'poly') {
-                    let pts = getScaledPoints();
-                    for (let i = 0; i < pts.length; i++) {
-                        let p1 = pts[i];
-                        let p2 = pts[(i+1) % pts.length];
-                        
-                        // Edge vector
-                        let ex = p2[0] - p1[0];
-                        let ey = p2[1] - p1[1];
-                        
-                        // Normal pointing toward origin (0,0) for centered convex shapes
-                        let nx = -ey;
-                        let ny = ex;
-                        let len = Math.sqrt(nx*nx + ny*ny);
-                        nx /= len; ny /= len;
-                        
-                        // Ensure normal points INWARDS
-                        if (nx * (-p1[0]) + ny * (-p1[1]) < 0) {
-                            nx = -nx; ny = -ny;
-                        }
-
-                        // Vector to particle
-                        let vx_p = this.x - p1[0];
-                        let vy_p = this.y - p1[1];
-                        
-                        // Distance to plane
-                        let d = vx_p * nx + vy_p * ny;
-                        
-                        if (d < 0) { // Crossed the boundary half-plane
-                            if (this.type === 'blade') activeGeo.scale += 0.0003;
-                            
-                            let nox = -nx; let noy = -ny; // Outward normal
-                            let dot = this.vx * nox + this.vy * noy;
-                            
-                            if (dot > 0) { // Moving outward
-                                this.vx -= 2 * dot * nox;
-                                this.vy -= 2 * dot * noy;
-                                this.x -= d * nx; // Push back inside
-                                this.y -= d * ny;
-                                hit = true;
-                            }
-                        }
-                    }
+                    this.vx *= -1;
+                    this.x = this.x < bounds.minX ? bounds.minX : bounds.maxX;
+                    hit = true;
                 }
-
+                if (this.y < bounds.minY || this.y > bounds.maxY) {
+                    if (this.type === 'blade') {
+                        bounds.minY -= 0.05; bounds.maxY += 0.05; 
+                    }
+                    this.vy *= -1;
+                    this.y = this.y < bounds.minY ? bounds.minY : bounds.maxY;
+                    hit = true;
+                }
                 if (hit) this.ticksSinceHit = 0;
             }
 
             checkZetaVoid() {
                 if (this.ticksSinceHit > ZETA_VOID_LIMIT) {
-                    document.getElementById('log').innerHTML = `<span class="text-xs text-yellow-500 block">Zeta Fold: Group ${this.groupId} ${this.type}</span>` + document.getElementById('log').innerHTML.slice(0, 500);
-                    this.x *= 0.1; 
-                    this.y *= 0.1;
-                    this.vx *= -1;
-                    this.vy *= -1;
+                    this.x *= 0.1; this.y *= 0.1;
+                    this.vx *= -1; this.vy *= -1;
                     this.ticksSinceHit = 0;
                 }
             }
         }
 
-        let balls = [];
-        let shadowBalls = [];
+        let balls = [], shadowBalls = [];
 
         function generateHash() {
             let str = balls.map(b => `${b.type}_${b.vx.toFixed(1)}_${b.vy.toFixed(1)}`).join('|');
             let hash = 0;
             for (let i = 0; i < str.length; i++) hash = Math.imul(31, hash) + str.charCodeAt(i) | 0;
-            // Append geometry name to the hash so we know what boundary formed it
-            return currentGeoName + "_" + Math.abs(hash).toString(16);
+            return "Discovery_" + Math.abs(hash).toString(16);
         }
 
         function initBalls() {
-            balls = [];
-            shadowBalls = [];
-
-            // Reset current geometry scale
-            activeGeo.scale = 1.0;
+            balls = []; shadowBalls = [];
+            bounds = { minX: -100, maxX: 100, minY: -100, maxY: 100 };
             inversions = 0;
             chaosRatio = 0;
             ticks = 0;
 
-            // 7 GROUPS OF 7
             for (let g = 0; g < 7; g++) {
                 for (let i = 0; i < 7; i++) {
                     let b = new Ball(g, false);
                     balls.push(b);
-
                     let shadow = new Ball(g, true);
                     shadow.x = b.x; shadow.y = b.y;
                     shadow.vx = b.vx + 1e-7; shadow.vy = b.vy + 1e-7;
-                    shadow.type = b.type;
                     shadowBalls.push(shadow);
                 }
             }
-
             currentConfigHash = generateHash();
             if (knownHashes.has(currentConfigHash)) initBalls(); 
         }
 
-        // --- 6. EXCLUSION & MEMORY REMAPPING ---
         function applyExclusionPrinciple() {
             for (let i = 0; i < balls.length; i++) {
                 for (let j = i + 1; j < balls.length; j++) {
                     let dx = balls[i].x - balls[j].x;
                     let dy = balls[i].y - balls[j].y;
-                    let distSq = dx*dx + dy*dy;
-
-                    if (distSq < 16) { 
-                        let b1 = balls[i]; let b2 = balls[j];
-
-                        // ZERO MEMORY = FULL CHAOS
+                    if (dx*dx + dy*dy < 25) { 
+                        let b1 = balls[i], b2 = balls[j];
                         if (Math.abs(b1.winding) < 0.1) {
-                            b1.vx = (Math.random() - 0.5) * 15;
-                            b1.vy = (Math.random() - 0.5) * 15;
+                            b1.vx = (Math.random() - 0.5) * 15; b1.vy = (Math.random() - 0.5) * 15;
                         }
-                        if (Math.abs(b2.winding) < 0.1) {
-                            b2.vx = (Math.random() - 0.5) * 15;
-                            b2.vy = (Math.random() - 0.5) * 15;
-                        }
-
                         if (Math.abs(b1.winding) > Math.abs(b2.winding)) {
                             b2.vx *= -1.08; b2.vy *= -1.08; 
                         } else {
@@ -328,328 +336,242 @@
         }
 
         function checkInversion() {
-            if (activeGeo.scale > 3.8) { // Expansion Limit
+            if (bounds.maxX - bounds.minX > MAX_BOUNDS * 2) { 
                 inversions++;
-                activeGeo.scale = 0.5; // Collapse the space inward
-                balls.forEach(b => {
-                    b.x *= 0.1; b.y *= 0.1; 
-                    b.vx *= -1; b.vy *= -1; 
-                });
-                document.getElementById('log').innerHTML = `<span class="text-xs text-purple-400 block font-bold">Inversion ${inversions} Map Collapsed!</span>` + document.getElementById('log').innerHTML.slice(0, 500);
+                bounds = { minX: -20, maxX: 20, minY: -20, maxY: 20 }; 
+                balls.forEach(b => { b.x *= 0.1; b.y *= 0.1; b.vx *= -1; b.vy *= -1; });
+                document.getElementById('log').innerHTML = `<div class="text-pink-400 font-bold">Map Inversion ${inversions} triggered! [Discovery Core Collapsed]</div>` + document.getElementById('log').innerHTML.slice(0, 300);
             }
         }
 
-        // --- 7. MASTER VISUALIZER (WARPED COMPOSITE) ---
-        function drawMaster() {
-            sCtx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
-
-            // 1. GLOBAL MUNKER STRIPE BACKGROUND
-            sCtx.fillStyle = bgPattern;
-            sCtx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
-
-            // 2. MASK NON-ACTIVE BOUNDS
-            sCtx.fillStyle = 'rgba(15, 23, 42, 0.6)';
-            sCtx.beginPath();
-            sCtx.rect(0, 0, CANVAS_SIZE, CANVAS_SIZE); // Outer CW
+        function checkPerformance() {
+            const now = performance.now();
+            const dt = now - lastFrameTime;
+            lastFrameTime = now;
             
-            if (activeGeo.type === 'circle') {
-                sCtx.arc(CENTER, CENTER, activeGeo.baseRadius * activeGeo.scale, 0, Math.PI * 2, true); // Inner CCW
-            } else {
-                let pts = getScaledPoints();
-                sCtx.moveTo(CENTER + pts[0][0], CENTER + pts[0][1]);
-                for(let i = pts.length - 1; i >= 0; i--) { // Inner CCW
-                    sCtx.lineTo(CENTER + pts[i][0], CENTER + pts[i][1]);
-                }
-            }
-            sCtx.fill("evenodd");
+            const currentFps = 1000 / dt;
+            fpsRolling = (fpsRolling * 0.9) + (currentFps * 0.1);
 
-            // Dynamic Boundaries Stroke
-            sCtx.strokeStyle = '#94a3b8';
-            sCtx.lineWidth = 3;
-            if (activeGeo.type === 'circle') {
-                sCtx.beginPath();
-                sCtx.arc(CENTER, CENTER, activeGeo.baseRadius * activeGeo.scale, 0, Math.PI * 2);
-                sCtx.stroke();
-            } else {
-                let pts = getScaledPoints();
-                sCtx.beginPath();
-                sCtx.moveTo(CENTER + pts[0][0], CENTER + pts[0][1]);
-                for(let i=1; i<pts.length; i++) sCtx.lineTo(CENTER + pts[i][0], CENTER + pts[i][1]);
-                sCtx.closePath();
-                sCtx.stroke();
+            if (fpsRolling < 30) {
+                CHUNK_SIZE = Math.max(50, CHUNK_SIZE - 20);
+                perfIndicator.textContent = "Compute: Throttled (Low Rig)";
+                perfIndicator.className = "text-red-400 font-mono font-bold text-[10px] md:text-xs";
+            } else if (fpsRolling > 55) {
+                CHUNK_SIZE = Math.min(800, CHUNK_SIZE + 10);
+                perfIndicator.textContent = "Compute: Unleashed (Max Yield)";
+                perfIndicator.className = "text-emerald-400 font-mono font-bold text-[10px] md:text-xs";
+            }
+        }
+
+        function drawMaster() {
+            ctx.clearRect(0, 0, width, height);
+
+            if (bgPattern) {
+                ctx.fillStyle = bgPattern;
+                ctx.fillRect(0, 0, width, height);
             }
 
-            // 3. RULIAD GRAPH WARPED BY PHYSICS (The "Bottom warped into the Top")
-            sCtx.lineWidth = 1.5;
-            sCtx.globalCompositeOperation = 'hard-light'; 
+            // Darken outside the dynamic expanding bounds
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.7)';
+            ctx.beginPath();
+            ctx.rect(0, 0, width, height); 
+            ctx.rect(CENTER_X + bounds.minX*baseScale, CENTER_Y + bounds.minY*baseScale, (bounds.maxX - bounds.minX)*baseScale, (bounds.maxY - bounds.minY)*baseScale);
+            ctx.fill("evenodd");
 
-            let maxDist = 120 * activeGeo.scale; 
+            ctx.lineWidth = 1.5;
+            ctx.globalCompositeOperation = 'hard-light'; 
+            let maxDist = (bounds.maxX - bounds.minX) * 0.3 * baseScale; 
 
             for (let i = 0; i < balls.length; i++) {
                 for (let j = i + 1; j < balls.length; j++) {
-                    let dx = balls[i].x - balls[j].x;
-                    let dy = balls[i].y - balls[j].y;
+                    let dx = balls[i].x*baseScale - balls[j].x*baseScale;
+                    let dy = balls[i].y*baseScale - balls[j].y*baseScale;
                     if (Math.abs(dx) > maxDist || Math.abs(dy) > maxDist) continue;
-
                     let dist = Math.sqrt(dx*dx + dy*dy);
+                    
                     if (dist < maxDist) {
-                        sCtx.beginPath();
-                        sCtx.moveTo(CENTER + balls[i].x, CENTER + balls[i].y);
+                        ctx.beginPath();
+                        ctx.moveTo(CENTER_X + balls[i].x*baseScale, CENTER_Y + balls[i].y*baseScale);
 
-                        // Warp Force
-                        let warpX = (balls[i].vx + balls[j].vx) * 12;
-                        let warpY = (balls[i].vy + balls[j].vy) * 12;
+                        let warpX = (balls[i].vx + balls[j].vx) * 10 * baseScale;
+                        let warpY = (balls[i].vy + balls[j].vy) * 10 * baseScale;
 
-                        let cp1x = CENTER + balls[i].x + warpX;
-                        let cp1y = CENTER + balls[i].y - warpY;
-                        let cp2x = CENTER + balls[j].x - warpX;
-                        let cp2y = CENTER + balls[j].y + warpY;
+                        ctx.bezierCurveTo(
+                            CENTER_X + balls[i].x*baseScale + warpX, CENTER_Y + balls[i].y*baseScale - warpY, 
+                            CENTER_X + balls[j].x*baseScale - warpX, CENTER_Y + balls[j].y*baseScale + warpY, 
+                            CENTER_X + balls[j].x*baseScale, CENTER_Y + balls[j].y*baseScale
+                        );
 
-                        sCtx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, CENTER + balls[j].x, CENTER + balls[j].y);
-
-                        let opacity = (1 - dist / maxDist) * 0.9;
-                        let grad = sCtx.createLinearGradient(CENTER + balls[i].x, CENTER + balls[i].y, CENTER + balls[j].x, CENTER + balls[j].y);
+                        let opacity = (1 - dist / maxDist) * 0.8;
+                        let grad = ctx.createLinearGradient(CENTER_X + balls[i].x*baseScale, CENTER_Y + balls[i].y*baseScale, CENTER_X + balls[j].x*baseScale, CENTER_Y + balls[j].y*baseScale);
                         grad.addColorStop(0, balls[i].color + Math.floor(opacity*255).toString(16).padStart(2,'0'));
                         grad.addColorStop(1, balls[j].color + Math.floor(opacity*255).toString(16).padStart(2,'0'));
-
-                        sCtx.strokeStyle = grad;
-                        sCtx.stroke();
+                        
+                        ctx.strokeStyle = grad;
+                        ctx.stroke();
                     }
                 }
             }
-            sCtx.globalCompositeOperation = 'source-over';
+            ctx.globalCompositeOperation = 'source-over';
 
-            // 4. RENDER TRAILS & MUNKER BALLS
             for (let g = 0; g < 7; g++) {
                 let groupBalls = balls.filter(b => b.groupId === g);
-
+                
                 groupBalls.forEach(b => {
                     if (b.path.length > 0) {
-                        sCtx.beginPath();
-                        sCtx.moveTo(CENTER + b.path[0].x, CENTER + b.path[0].y);
+                        ctx.beginPath();
+                        ctx.moveTo(CENTER_X + b.path[0].x*baseScale, CENTER_Y + b.path[0].y*baseScale);
                         for (let i = 1; i < b.path.length; i++) {
-                            let xc = CENTER + (b.path[i-1].x + b.path[i].x) / 2;
-                            let yc = CENTER + (b.path[i-1].y + b.path[i].y) / 2;
-                            sCtx.quadraticCurveTo(CENTER + b.path[i-1].x, CENTER + b.path[i-1].y, xc, yc);
+                            let xc = CENTER_X + (b.path[i-1].x + b.path[i].x)/2 * baseScale;
+                            let yc = CENTER_Y + (b.path[i-1].y + b.path[i].y)/2 * baseScale;
+                            ctx.quadraticCurveTo(CENTER_X + b.path[i-1].x*baseScale, CENTER_Y + b.path[i-1].y*baseScale, xc, yc);
                         }
-                        sCtx.lineTo(CENTER + b.x, CENTER + b.y);
-
-                        sCtx.lineWidth = b.type === 'smith' ? 4 : 1.5; 
-                        sCtx.strokeStyle = '#94a3b8'; 
-                        sCtx.stroke();
-
-                        sCtx.strokeStyle = fgPatterns[g]; 
-                        sCtx.stroke();
+                        ctx.lineTo(CENTER_X + b.x*baseScale, CENTER_Y + b.y*baseScale);
+                        
+                        ctx.lineWidth = b.type === 'smith' ? 4 : 2; 
+                        ctx.strokeStyle = '#94a3b8'; ctx.stroke(); 
+                        if(fgPatterns[g]) {
+                            ctx.strokeStyle = fgPatterns[g]; ctx.stroke(); 
+                        }
                     }
                 });
 
                 groupBalls.forEach(b => {
-                    sCtx.beginPath();
-                    let radius = b.type === 'smith' ? 8 : 5;
-                    sCtx.arc(CENTER + b.x, CENTER + b.y, radius, 0, Math.PI * 2);
-
-                    sCtx.fillStyle = '#94a3b8'; 
-                    sCtx.fill();
-
-                    sCtx.fillStyle = fgPatterns[g]; 
-                    sCtx.fill();
+                    ctx.beginPath();
+                    ctx.arc(CENTER_X + b.x*baseScale, CENTER_Y + b.y*baseScale, (b.type === 'smith' ? 8 : 5) * baseScale, 0, Math.PI * 2);
+                    ctx.fillStyle = '#94a3b8'; ctx.fill();
+                    if(fgPatterns[g]) {
+                        ctx.fillStyle = fgPatterns[g]; ctx.fill();
+                    }
                 });
             }
-        }
-
-        // --- 8. AUTONOMOUS RUN LOOP ---
-        function processTick() {
-            balls.forEach((b, i) => b.update(shadowBalls[i]));
-            shadowBalls.forEach(b => b.update(null)); 
-            applyExclusionPrinciple();
-            checkInversion();
-            ticks++;
+            
+            // Draw Dynamic Outline
+            ctx.strokeStyle = '#334155';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(CENTER_X + bounds.minX*baseScale, CENTER_Y + bounds.minY*baseScale, (bounds.maxX - bounds.minX)*baseScale, (bounds.maxY - bounds.minY)*baseScale);
         }
 
         function runChunk() {
             if (!isRunning) return;
+            checkPerformance();
 
-            let c = 0;
-            while (c < CHUNK_SIZE) { 
-                processTick();
-                c++;
+            for(let c=0; c < CHUNK_SIZE; c++) {
+                balls.forEach((b, i) => b.update(shadowBalls[i]));
+                shadowBalls.forEach(b => b.update(null)); 
+                applyExclusionPrinciple();
+                checkInversion();
+                ticks++;
             }
 
             drawMaster();
 
-            if (ticks % 25000 === 0 && chaosRatio < 8.0 && !knownHashes.has(currentConfigHash)) {
+            if (dbConnected && museumTableExists && ticks % 30000 === 0 && chaosRatio < 8.0 && !knownHashes.has(currentConfigHash)) {
                 saveStructureToSupabase();
             }
 
             document.getElementById('stat-ticks').textContent = ticks.toLocaleString();
             document.getElementById('stat-chaos').textContent = chaosRatio.toFixed(2);
             document.getElementById('stat-inversions').textContent = inversions;
+            document.getElementById('stat-winding').textContent = (balls.reduce((sum, b) => sum + Math.abs(b.winding), 0) / 49).toFixed(2);
 
-            let wAvg = balls.reduce((sum, b) => sum + Math.abs(b.winding), 0) / balls.length;
-            document.getElementById('stat-winding').textContent = wAvg.toFixed(2);
-
-            animationId = requestAnimationFrame(runChunk);
+            requestAnimationFrame(runChunk);
         }
 
-        // --- 9. SUPABASE DATABASE LOGIC ---
         async function saveStructureToSupabase() {
-            if (!supabase) return;
+            if (!supabase || !dbConnected || !museumTableExists) return;
             knownHashes.add(currentConfigHash);
             try {
-                const { data, error } = await supabase
-                    .from('museum')
-                    .upsert({ 
-                        hash: currentConfigHash, 
-                        chaos_ratio: chaosRatio.toFixed(2), 
-                        inversions: inversions, 
-                        tick_detected: ticks 
-                    });
-
-                if (error) throw error;
-                document.getElementById('log').innerHTML = `<span class="text-xs text-green-400 block">Supabase: Structure Saved [${currentConfigHash.substring(0,12)}]</span>` + document.getElementById('log').innerHTML.slice(0, 500);
-            } catch (e) {
-                console.error("Supabase Save Error:", e);
-            }
+                const { error } = await supabase.from('museum').upsert({ 
+                    hash: currentConfigHash, chaos_ratio: chaosRatio.toFixed(2), inversions, tick_detected: ticks 
+                });
+                if (error) {
+                     if (error.code === 'PGRST205' || error.code === '42P01') {
+                         console.error("Supabase upsert error: Table 'museum' not found.");
+                         museumTableExists = false;
+                     } else {
+                         console.error("Supabase upsert error:", error);
+                     }
+                } else {
+                    document.getElementById('log').innerHTML = `<div class="text-emerald-400">Yield Found! Logged: ${currentConfigHash.substring(0,8)}</div>` + document.getElementById('log').innerHTML.slice(0, 300);
+                }
+            } catch (e) { console.error(e); }
         }
 
         function loadMuseumSupabase() {
-            if (!supabase) {
-                document.getElementById('museum-list').innerHTML = `<div class="text-xs text-yellow-500 italic text-center mt-4">Supabase API Key Required. Configure at top of code.</div>`;
-                return;
-            }
-
+            if (!supabase) return;
+            
+            const list = document.getElementById('museum-list');
+            
             supabase.from('museum').select('*').order('created_at', { ascending: false }).limit(20)
                 .then(({ data, error }) => {
-                    if (error) throw error;
-                    renderMuseumList(data);
+                    if (error) {
+                        if (error.code !== 'PGRST205' && error.code !== '42P01') {
+                            console.error("Supabase fetch error:", error);
+                        }
+                        
+                        dbConnected = false;
+                        if (error.code === 'PGRST205' || error.code === '42P01') {
+                            museumTableExists = false;
+                            list.innerHTML = `<div class="text-red-400 italic text-center mt-4 text-[10px] p-2 border border-red-500/30 bg-red-900/20 rounded">Table 'museum' missing in Supabase.<br>Simulation running in local mode.</div>`;
+                        } else {
+                            list.innerHTML = `<div class="text-yellow-500 italic text-center mt-4 text-[10px]">Database connection error. Local mode active.</div>`;
+                        }
+                        return;
+                    }
+                    dbConnected = true;
+                    museumTableExists = true;
+                    renderMuseum(data || []);
+                    
+                    supabase.channel('custom-all-channel')
+                        .on('postgres_changes', { event: '*', schema: 'public', table: 'museum' }, payload => {
+                            document.getElementById('log').innerHTML = `<div class="text-purple-400">Swarm Sync...</div>` + document.getElementById('log').innerHTML.slice(0, 300);
+                            supabase.from('museum').select('*').order('created_at', { ascending: false }).limit(20)
+                                .then(({ data, error }) => {
+                                    if (!error) renderMuseum(data || []);
+                                });
+                        }).subscribe();
                 })
-                .catch(e => console.error("Fetch error:", e));
-
-            supabase.channel('custom-all-channel')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'museum' }, payload => {
-                    document.getElementById('log').innerHTML = `<span class="text-xs text-blue-400 block">Supabase Realtime Sync Triggered</span>` + document.getElementById('log').innerHTML.slice(0, 500);
-                    supabase.from('museum').select('*').order('created_at', { ascending: false }).limit(20)
-                        .then(({ data }) => renderMuseumList(data));
-                })
-                .subscribe();
+                .catch(err => {
+                     console.error("Supabase connection error:", err);
+                     dbConnected = false;
+                     list.innerHTML = `<div class="text-yellow-500 italic text-center mt-4 text-[10px]">Database connection error. Local mode active.</div>`;
+                });
         }
 
-        function renderMuseumList(data) {
+        function renderMuseum(data) {
             const list = document.getElementById('museum-list');
+            
+            if (!data || data.length === 0) {
+                list.innerHTML = `<div class="text-slate-500 italic text-center mt-4 text-[10px]">No structures found yet.</div>`;
+                return;
+            }
+            
             list.innerHTML = '';
             data.forEach(item => {
                 knownHashes.add(item.hash);
-                // Extract geometry name if it exists in the hash (e.g. "Triangle_ab12...")
-                let geoLabel = item.hash.split('_')[0];
+                let geoLabel = item.hash.includes('_') ? item.hash.split('_')[0] : 'Discovery';
                 let shortHash = item.hash.includes('_') ? item.hash.split('_')[1].substring(0,8) : item.hash.substring(0,8);
                 
                 list.innerHTML += `
-                    <div class="bg-slate-700 p-2 rounded text-xs border border-slate-600">
-                        <span class="text-sky-300 font-bold">${geoLabel}</span> <span class="text-blue-200 font-mono">#${shortHash}</span><br>
-                        Chaos: ${item.chaos_ratio} | Inv: ${item.inversions}
+                    <div class="bg-slate-800/80 p-2 rounded text-[10px] border border-slate-700 font-mono">
+                        <div class="flex justify-between mb-1">
+                            <span class="text-purple-300 font-bold">${geoLabel}</span>
+                            <span class="text-slate-400">#${shortHash}</span>
+                        </div>
+                        <div class="flex justify-between text-slate-500">
+                            <span>Inv: ${item.inversions}</span>
+                            <span>C: ${item.chaos_ratio}</span>
+                        </div>
                     </div>
                 `;
             });
         }
 
-        // --- UI HANDLERS ---
-        document.addEventListener('DOMContentLoaded', () => {
-            const geoSelect = document.getElementById('geo-select');
-            geoSelect.addEventListener('change', (e) => {
-                currentGeoName = e.target.value;
-                activeGeo = geometries[currentGeoName];
-                document.getElementById('log').innerHTML = `<span class="text-xs text-sky-400 block font-bold mt-2">>>> Geometry Shifted to: ${currentGeoName}</span>` + document.getElementById('log').innerHTML.slice(0, 500);
-                initBalls();
-            });
-        });
-
-        // --- INITIALIZE ---
         initBalls();
         loadMuseumSupabase();
-
         isRunning = true;
         runChunk(); 
-
     </script>
-</head>
-<body class="bg-slate-900 text-slate-100 min-h-screen p-4 font-sans flex flex-col items-center overflow-x-hidden">
-
-    <div class="w-full max-w-7xl mb-4 border-b border-slate-700 pb-4 flex justify-between items-center">
-        <div>
-            <h1 class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">sim3colts: Multi-Geometry Ruliad</h1>
-            <div class="flex items-center gap-3 mt-2">
-                <span class="text-slate-400 text-sm">Active Boundary Domain:</span>
-                <select id="geo-select">
-                    <option value="Square">Square Boundary</option>
-                    <option value="Triangle">Equilateral Triangle</option>
-                    <option value="Hexagon">Regular Hexagon</option>
-                    <option value="Octagon">Regular Octagon</option>
-                    <option value="Circle">Circular Domain</option>
-                </select>
-            </div>
-        </div>
-
-        <a href="https://www.buymeacoffee.com/sim3colts" target="_blank" class="hover:scale-105 transition-transform duration-200">
-            <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 48px !important;width: 174px !important;" >
-        </a>
-    </div>
-
-    <!-- MAIN COMPOSITE VISUALIZER STAGE -->
-    <div class="w-full max-w-7xl flex flex-col xl:flex-row gap-6 mb-6">
-
-        <div class="flex-none flex flex-col items-center mx-auto xl:mx-0">
-            <div class="relative bg-slate-950 rounded-xl shadow-[0_0_40px_rgba(15,23,42,0.9)] border border-slate-700 overflow-hidden" style="width: 800px; height: 800px;">
-                <canvas id="sim-canvas" width="800" height="800"></canvas>
-            </div>
-        </div>
-
-        <div class="flex-1 flex flex-col gap-4 min-w-[300px]">
-
-            <div class="grid grid-cols-1 gap-3">
-                <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
-                    <span class="block text-slate-400 text-xs uppercase tracking-wider mb-1">Infinite Compute Ticks</span>
-                    <span id="stat-ticks" class="text-2xl font-mono text-green-400">0</span>
-                </div>
-                <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
-                    <span class="block text-slate-400 text-xs uppercase tracking-wider mb-1">Chaos / Structure Ratio</span>
-                    <span id="stat-chaos" class="text-2xl font-mono text-red-400">0.00</span>
-                </div>
-                <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
-                    <span class="block text-slate-400 text-xs uppercase tracking-wider mb-1">Avg Winding Memory</span>
-                    <span id="stat-winding" class="text-2xl font-mono text-blue-400">0.00</span>
-                </div>
-                <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
-                    <span class="block text-slate-400 text-xs uppercase tracking-wider mb-1">Map Inversions</span>
-                    <span id="stat-inversions" class="text-2xl font-mono text-purple-400">0</span>
-                </div>
-
-                <div class="bg-blue-900/20 border border-blue-500/30 p-4 rounded-lg text-center shadow-[0_0_15px_rgba(59,130,246,0.15)] relative overflow-hidden">
-                    <div class="absolute inset-0 bg-gradient-to-r from-transparent via-blue-500/10 to-transparent -translate-x-full animate-shimmer"></div>
-                    <span class="text-blue-400 font-mono text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-3 relative z-10">
-                        <span class="w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_#60a5fa] animate-pulse"></span>
-                        Autonomous Core Active
-                        <span class="w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_#60a5fa] animate-pulse"></span>
-                    </span>
-                </div>
-            </div>
-
-            <div class="bg-slate-800 rounded-lg border border-slate-700 p-3 flex-1 flex flex-col min-h-[150px]">
-                <span class="block text-slate-400 text-xs uppercase tracking-wider mb-2 border-b border-slate-700 pb-1">Quantum Event Log</span>
-                <div id="log" class="flex-1 overflow-y-auto space-y-1 font-mono break-words"></div>
-            </div>
-
-            <div class="bg-slate-800 rounded-lg border border-slate-700 p-3 flex-1 flex flex-col min-h-[150px]">
-                <span class="block text-slate-400 text-xs uppercase tracking-wider mb-2 border-b border-slate-700 pb-1 flex justify-between">
-                    <span>Supabase Museum DB</span>
-                    <span class="text-[10px] text-green-500 animate-pulse">Live Sync</span>
-                </span>
-                <div id="museum-list" class="flex-1 overflow-y-auto space-y-2 pr-2">
-                    <div class="text-xs text-slate-500 italic text-center mt-4">Connecting to Supabase...</div>
-                </div>
-            </div>
-
-        </div>
-
-    </div>
 </body>
 </html>
