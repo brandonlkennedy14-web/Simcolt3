@@ -413,6 +413,11 @@ function initV1() {
     let CHUNK_SIZE = 300, lastFrameTime = performance.now(), fpsRolling = 60;
     let discoveryBounds = { minX: -150, maxX: 150, minY: -150, maxY: 150 };
 
+    // ── Munker-White illusion state ──
+    let munkerOffset = 0;
+    const MUNKER_STRIPE_H = 38;   // px height of each black stripe + gap
+    const MUNKER_SCROLL_SPEED = 0.4; // px per frame downward
+
     const geometries = {
         'Square':   { type:'poly', basePoints:[[-150,-150],[150,-150],[150,150],[-150,150]], scale:1 },
         'Triangle': { type:'poly', basePoints:[[0,-180],[156,90],[-156,90]], scale:1 },
@@ -644,12 +649,51 @@ function initV1() {
             for(let i=1;i<pts.length;i++) ctx.lineTo(CENTER_X+pts[i][0]*baseScale,CENTER_Y+pts[i][1]*baseScale);
             ctx.closePath();ctx.stroke();
         }
+
+        // ── Munker-White illusion overlay ──
+        drawMunkerWhite(ctx, width, height, munkerOffset, MUNKER_STRIPE_H);
+    }
+
+    function drawMunkerWhite(ctx, W, H, offset, stripeH) {
+        const halfStripe = stripeH / 2;
+        // Two vertical grey bands (left-third and right-third of screen)
+        const bandW = W * 0.08;
+        const leftBandX  = W * 0.18;
+        const rightBandX = W * 0.74;
+
+        // Grey bands drawn BELOW the stripes (visible only through black-stripe gaps → illusion zones)
+        ctx.save();
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 0.32;
+        ctx.fillStyle = '#808080';
+        ctx.fillRect(leftBandX,  0, bandW, H);
+        ctx.fillRect(rightBandX, 0, bandW, H);
+        ctx.globalAlpha = 1.0;
+
+        // Scrolling black stripes — full width, on top of everything
+        const startY = (offset % stripeH) - stripeH;
+        for (let y = startY; y < H + stripeH; y += stripeH) {
+            ctx.fillStyle = 'rgba(0,0,0,0.82)';
+            ctx.fillRect(0, y, W, halfStripe);
+        }
+
+        // Now punch WHITE stripes back over the RIGHT grey band only
+        // (so right band is seen through white gaps → appears darker)
+        // Left band is seen through black gaps → appears lighter
+        for (let y = startY; y < H + stripeH; y += stripeH) {
+            // white stripe covers the black on the right band
+            ctx.fillStyle = 'rgba(255,255,255,0.82)';
+            ctx.fillRect(rightBandX, y, bandW, halfStripe);
+        }
+
+        ctx.restore();
     }
 
     function loop() {
         let now=performance.now();
         fpsRolling=(fpsRolling*0.9)+((1000/Math.max(1,now-lastFrameTime))*0.1);
         lastFrameTime=now;
+        munkerOffset += MUNKER_SCROLL_SPEED;
         const perfEl=document.getElementById('v1-perf-indicator');
         if(fpsRolling<30){CHUNK_SIZE=Math.max(50,CHUNK_SIZE-5);perfEl.textContent='Compute: Throttled';perfEl.style.color='#f87171';}
         else if(fpsRolling>55){CHUNK_SIZE=Math.min(800,CHUNK_SIZE+2);perfEl.textContent='Compute: Unleashed';perfEl.style.color='#34d399';}
@@ -760,6 +804,11 @@ function initV2() {
     let wallHeatMax = 1;
     let lastDiscoveryFlash = 0;
     let museumCount = 0;
+
+    // ── Munker-White illusion state ──
+    let munkerOffset = 0;
+    const MUNKER_STRIPE_H = 38;
+    const MUNKER_SCROLL_SPEED = 0.4;
 
     function getScanConfig() { return SCAN_CONFIGS[Math.min(scanLevel,3)]; }
 
@@ -1069,6 +1118,9 @@ function initV2() {
         // Stats
         document.getElementById('v2-stat-chaos').textContent=chaosRatio.toFixed(2);
         document.getElementById('v2-stat-chaos').style.color=chaosRatio>8?'#f87171':chaosRatio>4?'#f59e0b':'#34d399';
+
+        // ── Munker-White illusion overlay ──
+        drawMunkerWhite(ctx, width, height, munkerOffset, MUNKER_STRIPE_H);
     }
 
     function drawBoundaryWithHeat(){
@@ -1125,12 +1177,48 @@ function initV2() {
             for(let i=1;i<pts.length;i++) ctx.lineTo(CENTER_X+pts[i][0]*baseScale,CENTER_Y+pts[i][1]*baseScale);
             ctx.closePath();ctx.stroke();
         }
+        // ── Munker-White illusion overlay (called after all boundary/heat drawing) ──
+        drawMunkerWhite(ctx, width, height, munkerOffset, MUNKER_STRIPE_H);
+    }
+
+    function drawMunkerWhite(ctx, W, H, offset, stripeH) {
+        const halfStripe = stripeH / 2;
+        const bandW      = W * 0.08;
+        const leftBandX  = W * 0.18;
+        const rightBandX = W * 0.74;
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'source-over';
+
+        // Grey bands — same grey, drawn before stripes land on top
+        ctx.globalAlpha = 0.30;
+        ctx.fillStyle = '#808080';
+        ctx.fillRect(leftBandX,  0, bandW, H);
+        ctx.fillRect(rightBandX, 0, bandW, H);
+        ctx.globalAlpha = 1.0;
+
+        // Full-width scrolling black stripes
+        const startY = (offset % stripeH) - stripeH;
+        for (let y = startY; y < H + stripeH; y += stripeH) {
+            ctx.fillStyle = 'rgba(0,0,0,0.80)';
+            ctx.fillRect(0, y, W, halfStripe);
+        }
+
+        // Right band: replace black stripes with white → grey seen through BLACK gaps = looks darker
+        // Left band:  keep black stripes          → grey seen through WHITE gaps = looks lighter
+        for (let y = startY; y < H + stripeH; y += stripeH) {
+            ctx.fillStyle = 'rgba(255,255,255,0.80)';
+            ctx.fillRect(rightBandX, y, bandW, halfStripe);
+        }
+
+        ctx.restore();
     }
 
     function loop(){
         let now=performance.now();
         fpsRolling=(fpsRolling*0.9)+((1000/Math.max(1,now-lastFrameTime))*0.1);
         lastFrameTime=now;
+        munkerOffset += MUNKER_SCROLL_SPEED;
         const perfEl=document.getElementById('v2-perf-indicator');
         if(fpsRolling<30){CHUNK_SIZE=Math.max(50,CHUNK_SIZE-5);perfEl.textContent='Compute: Throttled';perfEl.style.color='#f87171';}
         else if(fpsRolling>55){CHUNK_SIZE=Math.min(800,CHUNK_SIZE+2);perfEl.textContent='Compute: Unleashed';perfEl.style.color='#34d399';}
