@@ -228,24 +228,54 @@
 ═══════════════════════════════════════════════ -->
 <script>
     // ── Shared Supabase client (both versions read/write here) ──
-    const SUPABASE_URL = 'https://jeddcrgchxvdihmxuxpr.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImplZGRjcmdjaHh2ZGlobXh1eHByIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0MDQ4NjAsImV4cCI6MjA4Njk4MDg2MH0.WnCrWYXYsJPlxMj-RisMHBCveKUgI7HlBh0Peh1T6Vw';
+    // Project: inversion_sim_db — xoolmbmnzbsvcqeyqvyi.supabase.co
+    const SUPABASE_URL = 'https://xoolmbmnzbsvcqeyqvyi.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhvb2xtYm1uemJzdmNleXhxdnlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDMwNDQsImV4cCI6MjA4NzAxOTA0NH0.ebTwMZ_byU6EXtuR0jynct64QO5ornQrCwElQ5b9TxQ';
     const sharedSupabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const sharedKnownHashes = new Set(); // both versions share this in-memory set
     let sharedDbConnected = false;
 
+    // Genesis Brain — publish sim3 state so other apps can read it via WS push
+    const GB_HDRS = {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
+    };
+    let _gbV = 0, _gbLast = 0;
+    function gbWriteSim3(payload) {
+        const now = Date.now();
+        if (now - _gbLast < 500) return; // max 2 writes/sec
+        _gbLast = now;
+        fetch(SUPABASE_URL + '/rest/v1/genesis_brain', {
+            method: 'POST', headers: GB_HDRS,
+            body: JSON.stringify({ namespace: 'sim3', version: ++_gbV, payload: { ...payload, _ts: now } })
+        }).catch(() => {});
+    }
+
     // Load museum hashes once, shared by both versions
     function loadSharedMuseum(onReady) {
-        sharedSupabase.from('museum').select('hash').limit(2000).then(({ data, error }) => {
-            if (!error && data) {
+        sharedSupabase.from('museum').select('hash,chaos_ratio,inversions').limit(5000).then(({ data, error }) => {
+            if (error) {
+                // Museum table may not exist yet — sim still runs, just won't skip known configs
+                console.warn('Museum load failed (table may need creating):', error.message);
+                console.info('Run in Supabase SQL Editor: CREATE TABLE IF NOT EXISTS museum (hash text primary key, chaos_ratio text, tick_detected bigint, inversions int, version text, scan_level int, exclusion_dist int, trail_len int, parent_hash text, created_at timestamptz default now());');
+            } else if (data) {
                 data.forEach(item => sharedKnownHashes.add(item.hash));
+                console.log(`Museum loaded: ${data.length} known configurations`);
                 sharedDbConnected = true;
             }
-            sharedSupabase.channel('unified-channel')
-                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'museum' }, payload => {
-                    if (payload.new?.hash) sharedKnownHashes.add(payload.new.hash);
-                }).subscribe();
-            onReady();
+            // Always subscribe for live inserts — catches new discoveries from other sessions
+            try {
+                sharedSupabase.channel('unified-channel')
+                    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'museum' }, payload => {
+                        if (payload.new?.hash) sharedKnownHashes.add(payload.new.hash);
+                    }).subscribe();
+            } catch(e) {}
+            onReady(); // always launch — never block on DB
+        }).catch(e => {
+            console.warn('Museum unreachable:', e);
+            onReady(); // still launch
         });
     }
 
@@ -646,6 +676,24 @@ function initV1() {
                 }).catch(e=>console.error(e));
             }
         }
+        // Publish to genesis_brain so spectral_link / deep_learning can render sim3 state
+        gbWriteSim3({
+            balls: balls.slice(0, 49).map(b => ({
+                x: (CENTER_X + b.x * baseScale) / width,   // normalized 0-1
+                y: (CENTER_Y + b.y * baseScale) / height,
+                vx: b.vx, vy: b.vy,
+                winding: b.winding,
+                color: b.color,
+                type: b.type,
+                groupId: b.groupId
+            })),
+            chaos_ratio: chaosRatio,
+            inversions: inversions,
+            ticks: ticks,
+            geo: currentGeoName,
+            sim_mode: simMode,
+            version: 'v1'
+        });
         v1Loop = requestAnimationFrame(loop);
     }
 
@@ -1118,6 +1166,28 @@ function initV2() {
                 setTimeout(()=>triggerDeepScan(hash),200);
             }
         }
+        // Publish to genesis_brain — richer data from V2
+        gbWriteSim3({
+            balls: balls.slice(0, 49).map(b => ({
+                x: (CENTER_X + b.x * baseScale) / width,
+                y: (CENTER_Y + b.y * baseScale) / height,
+                vx: b.vx, vy: b.vy,
+                winding: b.winding,
+                color: b.color,
+                type: b.type,
+                groupId: b.groupId,
+                glow: b.glowIntensity
+            })),
+            chaos_ratio: chaosRatio,
+            inversions: inversions,
+            ticks: ticks,
+            geo: currentGeoName,
+            sim_mode: simMode,
+            scan_level: scanLevel,
+            wall_heat: wallHeat,
+            wall_heat_max: wallHeatMax,
+            version: 'v2'
+        });
         v2Loop=requestAnimationFrame(loop);
     }
 
