@@ -6,6 +6,7 @@
     <title>sim3colts - Unified Learning Engine</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="GenesisBrain.js"></script>
     <style>
         * { box-sizing: border-box; }
         body { margin: 0; overflow: hidden; background-color: #020617; font-family: sans-serif; }
@@ -235,23 +236,22 @@
     const sharedKnownHashes = new Set(); // both versions share this in-memory set
     let sharedDbConnected = false;
 
-    // Genesis Brain — publish sim3 state so other apps can read it via WS push
-    const GB_HDRS = {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-        'Content-Type': 'application/json',
-        'Prefer': 'resolution=merge-duplicates,return=minimal'
-    };
-    let _gbV = 0, _gbLast = 0;
+    // Genesis Brain — use shared module to publish sim3 state
+    // Rate-limited to 2 writes/sec; all other apps receive via WS push instantly
+    let _gbLast = 0;
     function gbWriteSim3(payload) {
         const now = Date.now();
-        if (now - _gbLast < 500) return; // max 2 writes/sec
+        if (now - _gbLast < 500) return;
         _gbLast = now;
-        fetch(SUPABASE_URL + '/rest/v1/genesis_brain', {
-            method: 'POST', headers: GB_HDRS,
-            body: JSON.stringify({ namespace: 'sim3', version: ++_gbV, payload: { ...payload, _ts: now } })
-        }).catch(() => {});
+        GenesisBrain.write('sim3', payload);
     }
+
+    // Connect GenesisBrain WS on page load so sim3 updates flow to deep learning + smell
+    window.addEventListener('DOMContentLoaded', () => {
+        GenesisBrain.connect().then(() => {
+            console.log('[sim3colts] GenesisBrain connected');
+        });
+    });
 
     // Load museum hashes once, shared by both versions
     function loadSharedMuseum(onReady) {
