@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Olfactory Diffusion Engine — Beyond Bound</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #020308; overflow: hidden; font-family: 'Courier New', monospace; }
+canvas { position: fixed; inset: 0; }
+#ui {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+    padding: 12px 16px;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    pointer-events: none;
+}
+.glass {
+    background: rgba(2, 8, 20, 0.72);
+    backdrop-filter: blur(14px);
+    border: 1px solid rgba(100, 255, 180, 0.12);
+    border-radius: 10px;
+    padding: 10px 14px;
+}
+#title-block { border-color: rgba(100, 255, 180, 0.18); border-top: 2px solid rgba(100, 255, 180, 0.4); }
+h1 {
+    font-size: 13px; font-weight: 700; letter-spacing: 0.18em;
+    text-transform: uppercase;
+    background: linear-gradient(90deg, #64ffb4, #00e5ff);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.sub { font-size: 8px; color: #2a4a3a; letter-spacing: 0.12em; text-transform: uppercase; margin-top: 3px; }
+#stats { display: flex; gap: 14px; font-size: 8px; font-family: 'Courier New', monospace; color: #1e3a2a; margin-top: 6px; }
+#stats span { color: #64ffb4; }
+#status-block { border-color: rgba(0, 229, 255, 0.15); font-size: 8px; color: #1e4a5a; min-width: 180px; }
+#status-block .row { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+#status-block .row:last-child { margin-bottom: 0; }
+.val { color: #00e5ff; font-weight: 700; }
+.val.active { color: #64ffb4; }
+.val.warn { color: #f59e0b; }
+#bottom-bar {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
+    padding: 10px 16px;
+    display: flex; justify-content: center;
+    pointer-events: none;
+}
+#element-legend {
+    background: rgba(2, 8, 20, 0.7);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(100, 255, 180, 0.08);
+    border-radius: 8px;
+    padding: 6px 16px;
+    display: flex; gap: 16px; align-items: center;
+    font-size: 7px; letter-spacing: 0.1em; text-transform: uppercase; color: #1e4a3a;
+}
+.el-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+@keyframes pulse-ring { 0%,100%{opacity:0.4;transform:scale(1)} 50%{opacity:1;transform:scale(1.04)} }
+#synthesis-ring {
+    position: fixed; inset: 0; z-index: 5; pointer-events: none; opacity: 0;
+    background: radial-gradient(circle at 50% 50%, rgba(100,255,180,0.04) 0%, transparent 70%);
+    transition: opacity 1.2s ease;
+}
+#synthesis-ring.active { opacity: 1; animation: pulse-ring 2s ease-in-out infinite; }
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+<div id="synthesis-ring"></div>
+
+<div id="ui">
+    <div class="glass" id="title-block">
+        <h1>Olfactory Diffusion Engine</h1>
+        <div class="sub">Beyond Bound · Sense 3 of 5 · Chemoreceptor Layer</div>
+        <div id="stats">
+            MOLECULES: <span id="s-mol">0</span> &nbsp;
+            DOMINANT: <span id="s-dom">—</span> &nbsp;
+            DIFFUSION: <span id="s-diff">0.000</span> &nbsp;
+            INVERSIONS: <span id="s-inv">0</span>
+        </div>
+    </div>
+    <div class="glass" id="status-block">
+        <div class="row">
+            <span>sim3</span>
+            <span class="val" id="st-sim3">SEARCHING</span>
+        </div>
+        <div class="row">
+            <span>band</span>
+            <span class="val" id="st-band">SEARCHING</span>
+        </div>
+        <div class="row">
+            <span>chaos</span>
+            <span class="val warn" id="st-chaos">—</span>
+        </div>
+        <div class="row">
+            <span>bpm</span>
+            <span class="val" id="st-bpm">—</span>
+        </div>
+        <div class="row">
+            <span>synthesis</span>
+            <span class="val" id="st-synth">WAITING</span>
+        </div>
+    </div>
+</div>
+
+<div id="bottom-bar">
+    <div id="element-legend">
+        <span><span class="el-dot" style="background:#ff6b35"></span>H · assimilation</span>
+        <span><span class="el-dot" style="background:#4ecdc4"></span>He · structure</span>
+        <span><span class="el-dot" style="background:#ffe66d"></span>Li · attraction</span>
+        <span><span class="el-dot" style="background:#a8dadc"></span>Be · structure</span>
+        <span><span class="el-dot" style="background:#ff6b9d"></span>B · repulsion</span>
+        <span><span class="el-dot" style="background:#64ffb4"></span>C · structure</span>
+        <span><span class="el-dot" style="background:#c77dff"></span>N · assimilation</span>
+        <span><span class="el-dot" style="background:#00e5ff"></span>O · structure</span>
+    </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════
+// GENESIS BRAIN CONNECTION — same project, same key as sim3 + band
+// ═══════════════════════════════════════════════════════════════════════
+const SB_URL = 'https://xoolmbmnzbsvcqeyqvyi.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhvb2xtYm1uemJzdmNleXhxdnlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDMwNDQsImV4cCI6MjA4NzAxOTA0NH0.ebTwMZ_byU6EXtuR0jynct64QO5ornQrCwElQ5b9TxQ';
+const HDRS = {
+    'apikey': SB_KEY,
+    'Authorization': 'Bearer ' + SB_KEY,
+    'Content-Type': 'application/json',
+    'Prefer': 'resolution=merge-duplicates,return=minimal'
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// ELEMENTS — from GenesisBrain ELEMENTS table, mapped to scent color
+// ═══════════════════════════════════════════════════════════════════════
+const ELEMENTS = [
+    { sym:'H',  pulse:0.1, logic:'assimilation', col:[255,107,53],  r:0 },
+    { sym:'He', pulse:0.2, logic:'structure',    col:[78,205,196],  r:1 },
+    { sym:'Li', pulse:0.3, logic:'attraction',   col:[255,230,109], r:2 },
+    { sym:'Be', pulse:0.4, logic:'structure',    col:[168,218,220], r:3 },
+    { sym:'B',  pulse:0.5, logic:'repulsion',    col:[255,107,157], r:4 },
+    { sym:'C',  pulse:0.6, logic:'structure',    col:[100,255,180], r:5 },
+    { sym:'N',  pulse:0.7, logic:'assimilation', col:[199,125,255], r:6 },
+    { sym:'O',  pulse:0.8, logic:'structure',    col:[0,229,255],   r:7 },
+];
+
+// ═══════════════════════════════════════════════════════════════════════
+// STATE — all three senses' data
+// ═══════════════════════════════════════════════════════════════════════
+let sim3Data = null;   // vision
+let bandData = null;   // sound
+let smellData = {};    // what we write back
+
+let sim3Connected = false;
+let bandConnected = false;
+
+let _gbV = 0, _gbLast = 0;
+function gbWriteSmell(payload) {
+    const now = Date.now();
+    if (now - _gbLast < 800) return; // max 1.25 writes/sec — smell is slow
+    _gbLast = now;
+    fetch(SB_URL + '/rest/v1/genesis_brain', {
+        method: 'POST', headers: HDRS,
+        body: JSON.stringify({ namespace: 'smell', version: ++_gbV, payload: { ...payload, _ts: now } })
+    }).catch(() => {});
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// WEBSOCKET — listen for ALL namespaces
+// ═══════════════════════════════════════════════════════════════════════
+let ws = null;
+let heartbeat = null;
+function connectWS() {
+    const url = SB_URL.replace('https://', 'wss://') +
+                `/realtime/v1/websocket?apikey=${SB_KEY}&vsn=1.0.0`;
+    ws = new WebSocket(url);
+    ws.onopen = () => {
+        ws.send(JSON.stringify({
+            topic: 'realtime:public:genesis_brain',
+            event: 'phx_join',
+            payload: {
+                config: {
+                    broadcast: { self: false },
+                    presence: { key: '' },
+                    postgres_changes: [{ event: '*', schema: 'public', table: 'genesis_brain' }]
+                }
+            },
+            ref: '1'
+        }));
+        if (heartbeat) clearInterval(heartbeat);
+        heartbeat = setInterval(() => {
+            if (ws?.readyState === 1)
+                ws.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: null }));
+        }, 25000);
+    };
+    ws.onmessage = (e) => {
+        try {
+            const msg = JSON.parse(e.data);
+            const rec = msg?.payload?.data?.record || msg?.payload?.data?.new || msg?.payload?.record;
+            if (!rec?.namespace) return;
+            if (rec.namespace === 'sim3') {
+                sim3Data = rec.payload;
+                sim3Connected = true;
+                document.getElementById('st-sim3').textContent = 'LIVE';
+                document.getElementById('st-sim3').className = 'val active';
+            }
+            if (rec.namespace === 'band') {
+                bandData = rec.payload;
+                bandConnected = true;
+                document.getElementById('st-band').textContent = 'LIVE';
+                document.getElementById('st-band').className = 'val active';
+            }
+        } catch (_) {}
+    };
+    ws.onclose = () => { if (heartbeat) clearInterval(heartbeat); setTimeout(connectWS, 4000); };
+    ws.onerror = () => ws.close();
+}
+
+// Load current state on boot, then open WS
+async function boot() {
+    try {
+        const r = await fetch(SB_URL + '/rest/v1/genesis_brain?select=*', { headers: HDRS });
+        const rows = await r.json();
+        if (Array.isArray(rows)) {
+            rows.forEach(row => {
+                if (row.namespace === 'sim3') { sim3Data = row.payload; sim3Connected = true; }
+                if (row.namespace === 'band') { bandData = row.payload; bandConnected = true; }
+            });
+        }
+    } catch (_) {}
+    connectWS();
+}
+boot();
+
+// ═══════════════════════════════════════════════════════════════════════
+// DIFFUSION FIELD — 2D grid of molecule concentrations per element type
+// ═══════════════════════════════════════════════════════════════════════
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+const GRID = 80; // resolution cells across
+let gW, gH;      // grid dimensions
+let field = [];  // [gH][gW][8] — concentration of each element
+let fieldBuf = [];
+
+function initField() {
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W; canvas.height = H;
+    gW = GRID; gH = Math.round(GRID * H / W);
+    field = [];
+    fieldBuf = [];
+    for (let y = 0; y < gH; y++) {
+        field[y] = [];
+        fieldBuf[y] = [];
+        for (let x = 0; x < gW; x++) {
+            field[y][x] = new Float32Array(8);
+            fieldBuf[y][x] = new Float32Array(8);
+        }
+    }
+}
+
+// Emit molecules at a grid position — called when sim3 balls or band voices update
+function emit(gx, gy, elementIdx, amount) {
+    gx = Math.max(0, Math.min(gW - 1, Math.round(gx)));
+    gy = Math.max(0, Math.min(gH - 1, Math.round(gy)));
+    field[gy][gx][elementIdx] = Math.min(1.0, field[gy][gx][elementIdx] + amount);
+}
+
+// Diffuse — slow spreading of concentrations. Rate is driven by chaos.
+function diffuse(rate) {
+    const d = rate * 0.18; // how much spreads to neighbours each tick
+    const decay = 0.9985;  // slow evaporation — smell lingers
+
+    for (let y = 0; y < gH; y++) {
+        for (let x = 0; x < gW; x++) {
+            const c = field[y][x];
+            const buf = fieldBuf[y][x];
+            for (let e = 0; e < 8; e++) {
+                let sum = c[e] * (1 - 4 * d);
+                if (y > 0)      sum += field[y-1][x][e] * d;
+                if (y < gH-1)   sum += field[y+1][x][e] * d;
+                if (x > 0)      sum += field[y][x-1][e] * d;
+                if (x < gW-1)   sum += field[y][x+1][e] * d;
+                buf[e] = Math.max(0, sum * decay);
+            }
+        }
+    }
+    // Swap buffers
+    for (let y = 0; y < gH; y++) {
+        for (let x = 0; x < gW; x++) {
+            const tmp = field[y][x];
+            field[y][x] = fieldBuf[y][x];
+            fieldBuf[y][x] = tmp;
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// INJECT FROM SOURCES — sim3 balls → elements, band voices → elements
+// ═══════════════════════════════════════════════════════════════════════
+let lastChaos = 0;
+let lastBpm = 120;
+let dominantElement = 0;
+let synthesisLevel = 0; // 0-1, how much all senses are converging
+let totalMolecules = 0;
+let inversionCount = 0;
+
+function injectSim3() {
+    if (!sim3Data?.balls) return;
+    const chaos = sim3Data.chaos_ratio || 0;
+    lastChaos = chaos;
+
+    // Each ball's winding → which element it smells like
+    // High winding = heavier elements (O), low winding = light (H, He)
+    sim3Data.balls.forEach(ball => {
+        const gx = (ball.x || 0.5) * gW;
+        const gy = (ball.y || 0.5) * gH;
+        const w = Math.abs(ball.winding || 0);
+        // Map winding to element index: low winding = H(0), high = O(7)
+        const eIdx = Math.min(7, Math.floor(w * 0.8));
+        // Emission strength: glow if available, else use winding
+        const strength = 0.04 + (ball.glow || 0) * 0.06 + w * 0.005;
+        emit(gx, gy, eIdx, strength);
+    });
+
+    // Chaos → extra H (chaos = assimilation principle in smell)
+    if (chaos > 2) {
+        for (let i = 0; i < 3; i++) {
+            emit(Math.random() * gW, Math.random() * gH, 0, chaos * 0.008);
+        }
+    }
+
+    // Inversion → flush field slightly (the world has turned inside out)
+    if (sim3Data.inversions > inversionCount) {
+        inversionCount = sim3Data.inversions;
+        // Rapid diffusion burst on inversion — smell resets with the sim
+        for (let y = 0; y < gH; y++)
+            for (let x = 0; x < gW; x++)
+                for (let e = 0; e < 8; e++)
+                    field[y][x][e] *= 0.3;
+    }
+}
+
+function injectBand() {
+    if (!bandData) return;
+    const bpm = bandData.bpm || 120;
+    lastBpm = bpm;
+
+    // Band voices → element injection at rhythm positions
+    // Bass (winding_bass) → B (repulsion, low freq)
+    // Mid  (winding_mid)  → C (structure, harmony)
+    // Lead (winding_lead) → N or O (high freq, assimilation)
+    // Drum (winding_drum) → H (chaotic, percussive)
+
+    const voices = [
+        { w: bandData.winding_drum || 0, eIdx: 0, cx: 0.25, cy: 0.5 },  // H — drum left side
+        { w: bandData.winding_bass || 0, eIdx: 4, cx: 0.35, cy: 0.75 }, // B — bass low
+        { w: bandData.winding_mid  || 0, eIdx: 5, cx: 0.6,  cy: 0.45 }, // C — mid center
+        { w: bandData.winding_lead || 0, eIdx: 6, cx: 0.75, cy: 0.3 },  // N — lead high
+    ];
+
+    // BPM drives how intensely band injects — fast tempo = more volatile smell
+    const bpmFactor = Math.min(2.0, bpm / 120);
+
+    voices.forEach(v => {
+        if (v.w < 0.01) return;
+        const gx = v.cx * gW + (Math.random() - 0.5) * 4;
+        const gy = v.cy * gH + (Math.random() - 0.5) * 4;
+        emit(gx, gy, v.eIdx, v.w * 0.06 * bpmFactor);
+    });
+
+    // Chord type maps to element pair emissions
+    // maj = C+He (structure), min = Li+N (attraction+assimilation), dim = H+B (chaos)
+    const chordMap = {
+        maj:  [5, 1], min:  [2, 6], dom7: [0, 4],
+        maj7: [5, 7], min7: [2, 4], quar: [3, 5],
+        dim:  [0, 4], aug:  [7, 1], dom9: [5, 6],
+    };
+    const pair = chordMap[bandData.chord_type] || [5, 1];
+    const cx = 0.5 * gW, cy = 0.5 * gH;
+    emit(cx + (Math.random()-0.5)*6, cy + (Math.random()-0.5)*6, pair[0], 0.03 * bpmFactor);
+    emit(cx + (Math.random()-0.5)*6, cy + (Math.random()-0.5)*6, pair[1], 0.03 * bpmFactor);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SYNTHESIS DETECTION — are all senses converging?
+// ═══════════════════════════════════════════════════════════════════════
+function detectSynthesis() {
+    if (!sim3Connected || !bandConnected) { synthesisLevel = 0; return; }
+
+    const simChaos = (sim3Data?.chaos_ratio || 0);
+    const bandWinding = (
+        (bandData?.winding_drum || 0) +
+        (bandData?.winding_bass || 0) +
+        (bandData?.winding_mid  || 0) +
+        (bandData?.winding_lead || 0)
+    ) / 4;
+
+    // Smell field average concentration = smell "winding"
+    let totalConc = 0;
+    for (let y = 0; y < gH; y++)
+        for (let x = 0; x < gW; x++)
+            for (let e = 0; e < 8; e++)
+                totalConc += field[y][x][e];
+    const smellConc = totalConc / (gW * gH * 8);
+    totalMolecules = Math.round(totalConc * 1000);
+
+    // Convergence: all three moderate — not zero, not maxed out
+    const simOK = simChaos > 0.5 && simChaos < 6;
+    const bandOK = bandWinding > 0.5 && bandWinding < 8;
+    const smellOK = smellConc > 0.02 && smellConc < 0.4;
+
+    synthesisLevel += ((simOK && bandOK && smellOK) ? 0.01 : -0.005);
+    synthesisLevel = Math.max(0, Math.min(1, synthesisLevel));
+
+    const ring = document.getElementById('synthesis-ring');
+    if (synthesisLevel > 0.7) ring.classList.add('active');
+    else ring.classList.remove('active');
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// RENDER — draw field as blended color haze
+// ═══════════════════════════════════════════════════════════════════════
+function render() {
+    const cellW = W / gW;
+    const cellH = H / gH;
+
+    // Dark background
+    ctx.fillStyle = 'rgba(2, 3, 8, 0.88)';
+    ctx.fillRect(0, 0, W, H);
+
+    // Draw each cell as a blended color — mix element colors by concentration
+    for (let y = 0; y < gH; y++) {
+        for (let x = 0; x < gW; x++) {
+            const c = field[y][x];
+            let totalConc = 0;
+            for (let e = 0; e < 8; e++) totalConc += c[e];
+            if (totalConc < 0.002) continue;
+
+            // Blend colors by concentration weight
+            let r = 0, g = 0, b = 0;
+            for (let e = 0; e < 8; e++) {
+                if (c[e] < 0.001) continue;
+                const w = c[e] / Math.max(0.001, totalConc);
+                r += ELEMENTS[e].col[0] * w;
+                g += ELEMENTS[e].col[1] * w;
+                b += ELEMENTS[e].col[2] * w;
+            }
+
+            const alpha = Math.min(0.85, totalConc * 2.2);
+            const px = x * cellW;
+            const py = y * cellH;
+
+            // Glow effect — larger radius with more concentration
+            const glow = Math.min(cellW * 3, totalConc * cellW * 6);
+            const grad = ctx.createRadialGradient(
+                px + cellW/2, py + cellH/2, 0,
+                px + cellW/2, py + cellH/2, glow
+            );
+            grad.addColorStop(0, `rgba(${r|0},${g|0},${b|0},${alpha})`);
+            grad.addColorStop(1, `rgba(${r|0},${g|0},${b|0},0)`);
+            ctx.fillStyle = grad;
+            ctx.fillRect(px - glow + cellW/2, py - glow + cellH/2, glow*2, glow*2);
+        }
+    }
+
+    // Find dominant element globally
+    let maxConc = 0;
+    const totals = new Float32Array(8);
+    for (let y = 0; y < gH; y++)
+        for (let x = 0; x < gW; x++)
+            for (let e = 0; e < 8; e++) {
+                totals[e] += field[y][x][e];
+                if (totals[e] > maxConc) { maxConc = totals[e]; dominantElement = e; }
+            }
+
+    // Draw sim3 ball positions as faint ghost markers (vision bleeding into smell)
+    if (sim3Data?.balls) {
+        ctx.save();
+        ctx.globalAlpha = 0.18;
+        sim3Data.balls.slice(0, 49).forEach(b => {
+            const px = (b.x || 0.5) * W;
+            const py = (b.y || 0.5) * H;
+            const col = b.color || '#64ffb4';
+            ctx.fillStyle = col;
+            ctx.beginPath();
+            ctx.arc(px, py, 2, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        ctx.restore();
+    }
+
+    // Synthesis overlay — subtle green wash when converging
+    if (synthesisLevel > 0.3) {
+        ctx.save();
+        ctx.globalAlpha = (synthesisLevel - 0.3) * 0.15;
+        const sg = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W,H)*0.6);
+        sg.addColorStop(0, 'rgba(100,255,180,1)');
+        sg.addColorStop(1, 'rgba(0,229,255,0)');
+        ctx.fillStyle = sg;
+        ctx.fillRect(0, 0, W, H);
+        ctx.restore();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// UI UPDATES
+// ═══════════════════════════════════════════════════════════════════════
+let uiTick = 0;
+function updateUI() {
+    uiTick++;
+    if (uiTick % 6 !== 0) return; // update UI every 6 frames
+
+    document.getElementById('s-mol').textContent = totalMolecules;
+    document.getElementById('s-dom').textContent = ELEMENTS[dominantElement].sym + ' · ' + ELEMENTS[dominantElement].logic;
+    document.getElementById('s-diff').textContent = lastChaos.toFixed(3);
+    document.getElementById('s-inv').textContent = inversionCount;
+
+    if (!sim3Connected) document.getElementById('st-sim3').textContent = 'SEARCHING';
+    if (!bandConnected) document.getElementById('st-band').textContent = 'SEARCHING';
+
+    const chaosEl = document.getElementById('st-chaos');
+    chaosEl.textContent = lastChaos.toFixed(2);
+    chaosEl.className = lastChaos > 8 ? 'val warn' : lastChaos > 0.5 ? 'val active' : 'val';
+
+    document.getElementById('st-bpm').textContent = lastBpm ? lastBpm + ' BPM' : '—';
+
+    const synthEl = document.getElementById('st-synth');
+    if (synthesisLevel > 0.7) { synthEl.textContent = 'CONVERGING ◉'; synthEl.className = 'val active'; }
+    else if (synthesisLevel > 0.3) { synthEl.textContent = 'BUILDING'; synthEl.className = 'val'; }
+    else { synthEl.textContent = 'WAITING'; synthEl.className = 'val'; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// WRITE BACK — publish smell state to GenesisBrain
+// ═══════════════════════════════════════════════════════════════════════
+function publishSmell() {
+    // Compute element concentrations to share
+    const totals = new Float32Array(8);
+    for (let y = 0; y < gH; y++)
+        for (let x = 0; x < gW; x++)
+            for (let e = 0; e < 8; e++)
+                totals[e] += field[y][x][e];
+    const total = totals.reduce((a,b) => a+b, 0);
+
+    gbWriteSmell({
+        dominant_element: ELEMENTS[dominantElement].sym,
+        dominant_logic:   ELEMENTS[dominantElement].logic,
+        element_mix:      Array.from(totals).map(v => parseFloat((v / Math.max(0.001, total)).toFixed(3))),
+        total_concentration: parseFloat((total / (gW * gH)).toFixed(4)),
+        diffusion_rate:   parseFloat(lastChaos.toFixed(3)),
+        bpm_lock:         lastBpm,
+        synthesis_level:  parseFloat(synthesisLevel.toFixed(3)),
+        inversions:       inversionCount,
+    });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MAIN LOOP
+// ═══════════════════════════════════════════════════════════════════════
+let tick = 0;
+function loop() {
+    tick++;
+
+    // Inject from senses every frame
+    injectSim3();
+    injectBand();
+
+    // Diffuse — rate driven by chaos (sim3) and bpm (band)
+    // High chaos = faster spread; high BPM = faster evaporation
+    const chaosRate = Math.max(0.1, Math.min(1.0, lastChaos / 8));
+    const bpmRate = Math.max(0.5, Math.min(2.0, lastBpm / 120));
+    diffuse(chaosRate);
+
+    // Adjust decay based on BPM — fast tempo = faster evaporation
+    if (bpmRate > 1.2) {
+        for (let y = 0; y < gH; y++)
+            for (let x = 0; x < gW; x++)
+                for (let e = 0; e < 8; e++)
+                    field[y][x][e] *= (1 - (bpmRate - 1) * 0.002);
+    }
+
+    detectSynthesis();
+    render();
+    updateUI();
+
+    // Write back to GenesisBrain every ~40 frames (~1.5s)
+    if (tick % 40 === 0) publishSmell();
+
+    requestAnimationFrame(loop);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════════════
+window.addEventListener('resize', initField);
+initField();
+loop();
+</script>
+</body>
+</html>
