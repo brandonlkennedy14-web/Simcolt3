@@ -410,7 +410,9 @@ function initV1() {
     let currentGeoName = 'Square';
     let ticks = 0, inversions = 0, chaosRatio = 0.0;
     let currentConfigHash = '';
-    let CHUNK_SIZE = 300, lastFrameTime = performance.now(), fpsRolling = 60;
+    const PRESIM_TICKS = 1000;
+    let frameBuffer = [], playbackIdx = 0, playbackMode = true;
+    let lastFrameTime = performance.now(), fpsRolling = 60;
     let discoveryBounds = { minX: -150, maxX: 150, minY: -150, maxY: 150 };
 
     // ── Munker-White illusion state ──
@@ -548,6 +550,54 @@ function initV1() {
         do { _spawnBalls(); attempts++; }
         while(sharedKnownHashes.has(generateHash()) && attempts<50);
         currentConfigHash=generateHash();
+        preSim();
+    }
+
+    function snapshotState() {
+        return {
+            balls: balls.map(b=>({
+                x:b.x, y:b.y, vx:b.vx, vy:b.vy,
+                winding:b.winding, ticksSinceHit:b.ticksSinceHit,
+                lastAngle:b.lastAngle, type:b.type, groupId:b.groupId,
+                color:b.color, path:b.path.map(p=>({x:p.x,y:p.y})), isShadow:false
+            })),
+            shadowBalls: shadowBalls.map(b=>({
+                x:b.x, y:b.y, vx:b.vx, vy:b.vy,
+                winding:b.winding, ticksSinceHit:b.ticksSinceHit, lastAngle:b.lastAngle
+            })),
+            chaosRatio, inversions, ticks,
+            discoveryBounds:{...discoveryBounds},
+            geoScale:activeGeo.scale
+        };
+    }
+
+    function restoreSnapshot(snap) {
+        snap.balls.forEach((s,i)=>{
+            const b=balls[i]; if(!b) return;
+            b.x=s.x; b.y=s.y; b.vx=s.vx; b.vy=s.vy;
+            b.winding=s.winding; b.ticksSinceHit=s.ticksSinceHit;
+            b.lastAngle=s.lastAngle; b.path=s.path.map(p=>({x:p.x,y:p.y}));
+        });
+        snap.shadowBalls.forEach((s,i)=>{
+            const b=shadowBalls[i]; if(!b) return;
+            b.x=s.x; b.y=s.y; b.vx=s.vx; b.vy=s.vy;
+            b.winding=s.winding; b.ticksSinceHit=s.ticksSinceHit;
+        });
+        chaosRatio=snap.chaosRatio; inversions=snap.inversions; ticks=snap.ticks;
+        discoveryBounds={...snap.discoveryBounds};
+        activeGeo.scale=snap.geoScale;
+    }
+
+    function preSim() {
+        frameBuffer=[]; playbackIdx=0; playbackMode=true;
+        for(let t=0;t<PRESIM_TICKS;t++){
+            balls.forEach((b,i)=>b.update(shadowBalls[i]));
+            shadowBalls.forEach(b=>b.update(null));
+            applyExclusionPrinciple();
+            checkInversion();
+            ticks++;
+            frameBuffer.push(snapshotState());
+        }
     }
 
     function applyExclusionPrinciple() {
@@ -710,21 +760,35 @@ function initV1() {
     }
 
     function loop() {
-        let now=performance.now();
-        fpsRolling=(fpsRolling*0.9)+((1000/Math.max(1,now-lastFrameTime))*0.1);
-        lastFrameTime=now;
-        munkerOffset = Math.sin(now * 0.0008) * MUNKER_STRIPE_H * 3 + now * 0.01;
-        const perfEl=document.getElementById('v1-perf-indicator');
-        if(fpsRolling<30){CHUNK_SIZE=Math.max(50,CHUNK_SIZE-5);perfEl.textContent='Compute: Throttled';perfEl.style.color='#f87171';}
-        else if(fpsRolling>55){CHUNK_SIZE=Math.min(800,CHUNK_SIZE+2);perfEl.textContent='Compute: Unleashed';perfEl.style.color='#34d399';}
+        const now = performance.now();
+        fpsRolling = (fpsRolling*0.9) + ((1000/Math.max(1,now-lastFrameTime))*0.1);
+        lastFrameTime = now;
+        munkerOffset = Math.sin(now*0.0008)*MUNKER_STRIPE_H*3 + now*0.01;
 
-        for(let c=0;c<CHUNK_SIZE;c++){
+        const perfEl = document.getElementById('v1-perf-indicator');
+
+        if(playbackMode) {
+            // Replay pre-simulated frames at native display rate — zero latency
+            restoreSnapshot(frameBuffer[playbackIdx]);
+            playbackIdx++;
+            if(playbackIdx >= frameBuffer.length) {
+                playbackMode = false;
+                frameBuffer = []; // free memory
+                perfEl.textContent='Compute: Live'; perfEl.style.color='#34d399';
+            } else {
+                const pct = Math.round(playbackIdx/frameBuffer.length*100);
+                perfEl.textContent=`Playback: ${pct}%`; perfEl.style.color='#38bdf8';
+            }
+        } else {
+            // Live mode: exactly 1 tick per frame — matches user display rate
             balls.forEach((b,i)=>b.update(shadowBalls[i]));
             shadowBalls.forEach(b=>b.update(null));
             applyExclusionPrinciple();
             checkInversion();
             ticks++;
+            perfEl.textContent=`Live · ${fpsRolling.toFixed(0)}fps`; perfEl.style.color='#34d399';
         }
+
         draw();
 
         if(sharedDbConnected && ticks>0 && ticks-lastMuseumTicks>=10000 && chaosRatio<8.0){
@@ -857,7 +921,9 @@ function initV2() {
 
     let simMode='platonic', currentGeoName='Square';
     let ticks=0, inversions=0, chaosRatio=0.0;
-    let CHUNK_SIZE=300, lastFrameTime=performance.now(), fpsRolling=60;
+    const PRESIM_TICKS=1000;
+    let frameBuffer=[], playbackIdx=0, playbackMode=true;
+    let lastFrameTime=performance.now(), fpsRolling=60;
     let discoveryBounds={minX:-150,maxX:150,minY:-150,maxY:150};
 
     const geometries={
@@ -990,6 +1056,60 @@ function initV2() {
         let attempts=0;
         do { _spawnBalls(); attempts++; }
         while(sharedKnownHashes.has(generateHash()) && attempts<50);
+        preSim();
+    }
+
+    function snapshotState(){
+        return {
+            balls: balls.map(b=>({
+                x:b.x, y:b.y, vx:b.vx, vy:b.vy,
+                winding:b.winding, ticksSinceHit:b.ticksSinceHit,
+                lastAngle:b.lastAngle, glowIntensity:b.glowIntensity,
+                type:b.type, groupId:b.groupId, color:b.color,
+                path:b.path.map(p=>({x:p.x,y:p.y}))
+            })),
+            shadowBalls: shadowBalls.map(b=>({
+                x:b.x, y:b.y, vx:b.vx, vy:b.vy,
+                winding:b.winding, ticksSinceHit:b.ticksSinceHit, lastAngle:b.lastAngle
+            })),
+            chaosRatio, inversions, ticks,
+            discoveryBounds:{...discoveryBounds},
+            geoScale:activeGeo.scale,
+            wallHeat:[...wallHeat], wallHeatMax,
+            scanLevel, scanParentHash
+        };
+    }
+
+    function restoreSnapshot(snap){
+        snap.balls.forEach((s,i)=>{
+            const b=balls[i]; if(!b) return;
+            b.x=s.x; b.y=s.y; b.vx=s.vx; b.vy=s.vy;
+            b.winding=s.winding; b.ticksSinceHit=s.ticksSinceHit;
+            b.lastAngle=s.lastAngle; b.glowIntensity=s.glowIntensity;
+            b.path=s.path.map(p=>({x:p.x,y:p.y}));
+        });
+        snap.shadowBalls.forEach((s,i)=>{
+            const b=shadowBalls[i]; if(!b) return;
+            b.x=s.x; b.y=s.y; b.vx=s.vx; b.vy=s.vy;
+            b.winding=s.winding; b.ticksSinceHit=s.ticksSinceHit;
+        });
+        chaosRatio=snap.chaosRatio; inversions=snap.inversions; ticks=snap.ticks;
+        discoveryBounds={...snap.discoveryBounds};
+        activeGeo.scale=snap.geoScale;
+        wallHeat=[...snap.wallHeat]; wallHeatMax=snap.wallHeatMax;
+        scanLevel=snap.scanLevel; scanParentHash=snap.scanParentHash;
+    }
+
+    function preSim(){
+        frameBuffer=[]; playbackIdx=0; playbackMode=true;
+        for(let t=0;t<PRESIM_TICKS;t++){
+            balls.forEach((b,i)=>b.update(shadowBalls[i]));
+            shadowBalls.forEach(b=>b.update(null));
+            applyExclusionPrinciple();
+            checkInversion();
+            ticks++;
+            frameBuffer.push(snapshotState());
+        }
     }
 
     function triggerDeepScan(parentHash){
@@ -1255,21 +1375,35 @@ function initV2() {
     }
 
     function loop(){
-        let now=performance.now();
+        const now=performance.now();
         fpsRolling=(fpsRolling*0.9)+((1000/Math.max(1,now-lastFrameTime))*0.1);
         lastFrameTime=now;
-        munkerOffset = Math.sin(now * 0.0008) * MUNKER_STRIPE_H * 3 + now * 0.01;
+        munkerOffset=Math.sin(now*0.0008)*MUNKER_STRIPE_H*3+now*0.01;
         const perfEl=document.getElementById('v2-perf-indicator');
-        if(fpsRolling<30){CHUNK_SIZE=Math.max(50,CHUNK_SIZE-5);perfEl.textContent='Compute: Throttled';perfEl.style.color='#f87171';}
-        else if(fpsRolling>55){CHUNK_SIZE=Math.min(800,CHUNK_SIZE+2);perfEl.textContent='Compute: Unleashed';perfEl.style.color='#34d399';}
 
-        for(let c=0;c<CHUNK_SIZE;c++){
+        if(playbackMode){
+            // Replay pre-simulated frames at native display rate — zero latency
+            restoreSnapshot(frameBuffer[playbackIdx]);
+            document.getElementById('v2-stat-scan').textContent=scanLevel;
+            playbackIdx++;
+            if(playbackIdx>=frameBuffer.length){
+                playbackMode=false;
+                frameBuffer=[]; // free memory
+                perfEl.textContent='Live · '+fpsRolling.toFixed(0)+'fps'; perfEl.style.color='#34d399';
+            } else {
+                const pct=Math.round(playbackIdx/frameBuffer.length*100);
+                perfEl.textContent='Playback: '+pct+'%'; perfEl.style.color='#38bdf8';
+            }
+        } else {
+            // Live mode: exactly 1 tick per frame — inversion bursts fully visible
             balls.forEach((b,i)=>b.update(shadowBalls[i]));
             shadowBalls.forEach(b=>b.update(null));
             applyExclusionPrinciple();
             checkInversion();
             ticks++;
+            perfEl.textContent='Live · '+fpsRolling.toFixed(0)+'fps'; perfEl.style.color='#34d399';
         }
+
         draw();
 
         if(sharedDbConnected&&ticks>0&&ticks-lastMuseumTicks>=10000&&chaosRatio<8.0){
