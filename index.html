@@ -517,6 +517,7 @@ function initV1() {
     }
 
     let balls=[], shadowBalls=[];
+    let lastMuseumTicks = 0;
 
     function generateHash() {
         let str=balls.map(b=>`${b.type}_${b.vx.toFixed(1)}_${b.vy.toFixed(1)}`).join('|');
@@ -529,10 +530,10 @@ function initV1() {
         return `${currentGeoName}_${Math.abs(hash).toString(16)}`;
     }
 
-    function initBalls() {
+    function _spawnBalls() {
         balls=[]; shadowBalls=[];
         discoveryBounds={minX:-150,maxX:150,minY:-150,maxY:150};
-        activeGeo.scale=1.0; ticks=0; chaosRatio=0; inversions=0;
+        activeGeo.scale=1.0; ticks=0; lastMuseumTicks=0; chaosRatio=0; inversions=0;
         for(let g=0;g<7;g++){
             for(let i=0;i<7;i++){
                 let b=new Ball(g,false); balls.push(b);
@@ -540,8 +541,13 @@ function initV1() {
                 shadowBalls.push(s);
             }
         }
+    }
+
+    function initBalls() {
+        let attempts=0;
+        do { _spawnBalls(); attempts++; }
+        while(sharedKnownHashes.has(generateHash()) && attempts<50);
         currentConfigHash=generateHash();
-        if(sharedKnownHashes.has(currentConfigHash)) initBalls();
     }
 
     function applyExclusionPrinciple() {
@@ -721,7 +727,8 @@ function initV1() {
         }
         draw();
 
-        if(sharedDbConnected && ticks>0 && ticks%10000===0 && chaosRatio<8.0){
+        if(sharedDbConnected && ticks>0 && ticks-lastMuseumTicks>=10000 && chaosRatio<8.0){
+            lastMuseumTicks=ticks;
             let currentEvolvedHash=generateHash();
             if(!sharedKnownHashes.has(currentEvolvedHash)){
                 sharedKnownHashes.add(currentEvolvedHash);
@@ -952,6 +959,7 @@ function initV2() {
     }
 
     let balls=[],shadowBalls=[];
+    let lastMuseumTicks=0;
 
     function generateHash(){
         const cfg=getScanConfig();
@@ -964,11 +972,11 @@ function initV2() {
         return `${prefix}_${Math.abs(hash).toString(16)}`;
     }
 
-    function initBalls(){
+    function _spawnBalls(){
         balls=[];shadowBalls=[];
         wallHeat=new Array(8).fill(0);wallHeatMax=1;
         discoveryBounds={minX:-150,maxX:150,minY:-150,maxY:150};
-        activeGeo.scale=1.0;ticks=0;chaosRatio=0;inversions=0;
+        activeGeo.scale=1.0;ticks=0;lastMuseumTicks=0;chaosRatio=0;inversions=0;
         for(let g=0;g<7;g++){
             for(let i=0;i<7;i++){
                 let b=new Ball(g,false);balls.push(b);
@@ -976,7 +984,12 @@ function initV2() {
                 shadowBalls.push(s);
             }
         }
-        if(sharedKnownHashes.has(generateHash())) initBalls();
+    }
+
+    function initBalls(){
+        let attempts=0;
+        do { _spawnBalls(); attempts++; }
+        while(sharedKnownHashes.has(generateHash()) && attempts<50);
     }
 
     function triggerDeepScan(parentHash){
@@ -1259,7 +1272,8 @@ function initV2() {
         }
         draw();
 
-        if(sharedDbConnected&&ticks>0&&ticks%10000===0&&chaosRatio<8.0){
+        if(sharedDbConnected&&ticks>0&&ticks-lastMuseumTicks>=10000&&chaosRatio<8.0){
+            lastMuseumTicks=ticks;
             let hash=generateHash();
             if(!sharedKnownHashes.has(hash)){
                 sharedKnownHashes.add(hash);
