@@ -584,6 +584,9 @@ function initV1() {
         }
         ctx.fill('evenodd');
 
+        // ── Munker-White: drawn HERE so balls + trails render ON TOP ──
+        drawMunkerWhite(ctx, width, height, munkerOffset, MUNKER_STRIPE_H);
+
         ctx.lineWidth=1.5;
         ctx.globalCompositeOperation='hard-light';
         let maxDist=(simMode==='discovery'?150:150*activeGeo.scale)*baseScale;
@@ -649,41 +652,52 @@ function initV1() {
             for(let i=1;i<pts.length;i++) ctx.lineTo(CENTER_X+pts[i][0]*baseScale,CENTER_Y+pts[i][1]*baseScale);
             ctx.closePath();ctx.stroke();
         }
-
-        // ── Munker-White illusion overlay ──
-        drawMunkerWhite(ctx, width, height, munkerOffset, MUNKER_STRIPE_H);
     }
 
     function drawMunkerWhite(ctx, W, H, offset, stripeH) {
-        const halfStripe = stripeH / 2;
-        // Two vertical grey bands (left-third and right-third of screen)
+        ctx.save();
+
+        // Clip to sim boundary — lines only inside the active geometry
+        ctx.beginPath();
+        if (simMode==='discovery') {
+            ctx.rect(
+                CENTER_X+discoveryBounds.minX*baseScale,
+                CENTER_Y+discoveryBounds.minY*baseScale,
+                (discoveryBounds.maxX-discoveryBounds.minX)*baseScale,
+                (discoveryBounds.maxY-discoveryBounds.minY)*baseScale
+            );
+        } else if (activeGeo.type==='circle') {
+            ctx.arc(CENTER_X, CENTER_Y, activeGeo.baseRadius*activeGeo.scale*baseScale, 0, Math.PI*2);
+        } else {
+            let pts=getScaledPoints();
+            ctx.moveTo(CENTER_X+pts[0][0]*baseScale, CENTER_Y+pts[0][1]*baseScale);
+            for (let i=1;i<pts.length;i++) ctx.lineTo(CENTER_X+pts[i][0]*baseScale, CENTER_Y+pts[i][1]*baseScale);
+            ctx.closePath();
+        }
+        ctx.clip();
+
+        // Grey bands — identical grey, will look different due to stripe intersection
         const bandW = W * 0.08;
         const leftBandX  = W * 0.18;
         const rightBandX = W * 0.74;
-
-        // Grey bands drawn BELOW the stripes (visible only through black-stripe gaps → illusion zones)
-        ctx.save();
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.globalAlpha = 0.32;
+        ctx.globalAlpha = 0.30;
         ctx.fillStyle = '#808080';
         ctx.fillRect(leftBandX,  0, bandW, H);
         ctx.fillRect(rightBandX, 0, bandW, H);
         ctx.globalAlpha = 1.0;
 
-        // Scrolling black stripes — full width, on top of everything
+        // 1px black lines oscillating up/down across full sim width
         const startY = (offset % stripeH) - stripeH;
         for (let y = startY; y < H + stripeH; y += stripeH) {
-            ctx.fillStyle = 'rgba(0,0,0,0.82)';
-            ctx.fillRect(0, y, W, halfStripe);
+            ctx.fillStyle = 'rgba(0,0,0,0.88)';
+            ctx.fillRect(0, y, W, 1);
         }
-
-        // Now punch WHITE stripes back over the RIGHT grey band only
-        // (so right band is seen through white gaps → appears darker)
-        // Left band is seen through black gaps → appears lighter
+        // Right band: replace those black 1px lines with white 1px lines
+        // Left band keeps black → grey seen through white gaps = lighter
+        // Right band gets white → grey seen through black gaps = darker
         for (let y = startY; y < H + stripeH; y += stripeH) {
-            // white stripe covers the black on the right band
-            ctx.fillStyle = 'rgba(255,255,255,0.82)';
-            ctx.fillRect(rightBandX, y, bandW, halfStripe);
+            ctx.fillStyle = 'rgba(255,255,255,0.88)';
+            ctx.fillRect(rightBandX, y, bandW, 1);
         }
 
         ctx.restore();
@@ -693,7 +707,7 @@ function initV1() {
         let now=performance.now();
         fpsRolling=(fpsRolling*0.9)+((1000/Math.max(1,now-lastFrameTime))*0.1);
         lastFrameTime=now;
-        munkerOffset += MUNKER_SCROLL_SPEED;
+        munkerOffset = Math.sin(now * 0.0008) * MUNKER_STRIPE_H * 3 + now * 0.01;
         const perfEl=document.getElementById('v1-perf-indicator');
         if(fpsRolling<30){CHUNK_SIZE=Math.max(50,CHUNK_SIZE-5);perfEl.textContent='Compute: Throttled';perfEl.style.color='#f87171';}
         else if(fpsRolling>55){CHUNK_SIZE=Math.min(800,CHUNK_SIZE+2);perfEl.textContent='Compute: Unleashed';perfEl.style.color='#34d399';}
@@ -1038,6 +1052,9 @@ function initV2() {
         }
         ctx.fill('evenodd');
 
+        // ── Munker-White: drawn HERE so balls + trails render ON TOP ──
+        drawMunkerWhite(ctx, width, height, munkerOffset, MUNKER_STRIPE_H);
+
         // Ruliad graph
         ctx.lineWidth=1.5;ctx.globalCompositeOperation='hard-light';
         let maxDist=(simMode==='discovery'?150:150*activeGeo.scale)*baseScale;
@@ -1118,9 +1135,6 @@ function initV2() {
         // Stats
         document.getElementById('v2-stat-chaos').textContent=chaosRatio.toFixed(2);
         document.getElementById('v2-stat-chaos').style.color=chaosRatio>8?'#f87171':chaosRatio>4?'#f59e0b':'#34d399';
-
-        // ── Munker-White illusion overlay ──
-        drawMunkerWhite(ctx, width, height, munkerOffset, MUNKER_STRIPE_H);
     }
 
     function drawBoundaryWithHeat(){
@@ -1177,38 +1191,50 @@ function initV2() {
             for(let i=1;i<pts.length;i++) ctx.lineTo(CENTER_X+pts[i][0]*baseScale,CENTER_Y+pts[i][1]*baseScale);
             ctx.closePath();ctx.stroke();
         }
-        // ── Munker-White illusion overlay (called after all boundary/heat drawing) ──
-        drawMunkerWhite(ctx, width, height, munkerOffset, MUNKER_STRIPE_H);
     }
 
     function drawMunkerWhite(ctx, W, H, offset, stripeH) {
-        const halfStripe = stripeH / 2;
-        const bandW      = W * 0.08;
+        ctx.save();
+
+        // Clip to sim boundary — lines only inside the active geometry, matching its scale
+        ctx.beginPath();
+        if (simMode==='discovery') {
+            ctx.rect(
+                CENTER_X+discoveryBounds.minX*baseScale,
+                CENTER_Y+discoveryBounds.minY*baseScale,
+                (discoveryBounds.maxX-discoveryBounds.minX)*baseScale,
+                (discoveryBounds.maxY-discoveryBounds.minY)*baseScale
+            );
+        } else if (activeGeo.type==='circle') {
+            ctx.arc(CENTER_X, CENTER_Y, activeGeo.baseRadius*activeGeo.scale*baseScale, 0, Math.PI*2);
+        } else {
+            let pts=getScaledPoints();
+            ctx.moveTo(CENTER_X+pts[0][0]*baseScale, CENTER_Y+pts[0][1]*baseScale);
+            for (let i=1;i<pts.length;i++) ctx.lineTo(CENTER_X+pts[i][0]*baseScale, CENTER_Y+pts[i][1]*baseScale);
+            ctx.closePath();
+        }
+        ctx.clip();
+
+        // Grey bands — identical grey, look different due to stripe intersection
+        const bandW = W * 0.08;
         const leftBandX  = W * 0.18;
         const rightBandX = W * 0.74;
-
-        ctx.save();
-        ctx.globalCompositeOperation = 'source-over';
-
-        // Grey bands — same grey, drawn before stripes land on top
         ctx.globalAlpha = 0.30;
         ctx.fillStyle = '#808080';
         ctx.fillRect(leftBandX,  0, bandW, H);
         ctx.fillRect(rightBandX, 0, bandW, H);
         ctx.globalAlpha = 1.0;
 
-        // Full-width scrolling black stripes
+        // 1px black lines oscillating across the sim boundary
         const startY = (offset % stripeH) - stripeH;
         for (let y = startY; y < H + stripeH; y += stripeH) {
-            ctx.fillStyle = 'rgba(0,0,0,0.80)';
-            ctx.fillRect(0, y, W, halfStripe);
+            ctx.fillStyle = 'rgba(0,0,0,0.88)';
+            ctx.fillRect(0, y, W, 1);
         }
-
-        // Right band: replace black stripes with white → grey seen through BLACK gaps = looks darker
-        // Left band:  keep black stripes          → grey seen through WHITE gaps = looks lighter
+        // Right band: white 1px lines instead → grey there seen through black gaps = darker
         for (let y = startY; y < H + stripeH; y += stripeH) {
-            ctx.fillStyle = 'rgba(255,255,255,0.80)';
-            ctx.fillRect(rightBandX, y, bandW, halfStripe);
+            ctx.fillStyle = 'rgba(255,255,255,0.88)';
+            ctx.fillRect(rightBandX, y, bandW, 1);
         }
 
         ctx.restore();
@@ -1218,7 +1244,7 @@ function initV2() {
         let now=performance.now();
         fpsRolling=(fpsRolling*0.9)+((1000/Math.max(1,now-lastFrameTime))*0.1);
         lastFrameTime=now;
-        munkerOffset += MUNKER_SCROLL_SPEED;
+        munkerOffset = Math.sin(now * 0.0008) * MUNKER_STRIPE_H * 3 + now * 0.01;
         const perfEl=document.getElementById('v2-perf-indicator');
         if(fpsRolling<30){CHUNK_SIZE=Math.max(50,CHUNK_SIZE-5);perfEl.textContent='Compute: Throttled';perfEl.style.color='#f87171';}
         else if(fpsRolling>55){CHUNK_SIZE=Math.min(800,CHUNK_SIZE+2);perfEl.textContent='Compute: Unleashed';perfEl.style.color='#34d399';}
