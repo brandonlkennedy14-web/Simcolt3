@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Genesis — Atomic Engine</title>
+    <script src="GenesisBrain.js"></script>
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Syne Mono', monospace; }
+        canvas { display: block; filter: contrast(1.2) saturate(1.4); }
+        #hud { position: fixed; top: 20px; left: 20px; color: #fff; pointer-events: none; z-index: 10; display: flex; flex-direction: column; gap: 6px; }
+        .label { font-size: 10px; opacity: 0.5; letter-spacing: 2px; text-transform: uppercase; }
+        .grade-a { color: #00ffe7; text-shadow: 0 0 10px #00ffe7; font-size: 13px; letter-spacing: 1px; }
+        .band-hud { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: rgba(255,183,0,0.8); text-shadow: 0 0 8px rgba(255,183,0,0.5); margin-top: 4px; }
+        #ws-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #333; margin-right: 6px; vertical-align: middle; transition: background 0.3s; }
+        #ws-dot.live { background: #00ffe7; box-shadow: 0 0 8px #00ffe7; }
+    </style>
+</head>
+<body>
+<div id="hud">
+    <div class="label"><span id="ws-dot"></span>Molecular Testbed V4.1</div>
+    <div id="combination-status" class="grade-a">ANALYZING RESONANCE...</div>
+    <div id="band-status" class="band-hud">BAND: OFFLINE</div>
+    <div id="atom-count" class="label">ATOMS: 30</div>
+</div>
+<canvas id="sim"></canvas>
+<script>
+    const canvas = document.getElementById('sim');
+    const ctx = canvas.getContext('2d');
+    let atoms = [];
+    let bandState  = { bpm: 0, chaos: 0.2, chord_type: 'maj', winding_bass: 0, active: false, _lastSeen: 0 };
+    let sim3State  = { chaos_ratio: 0, inversions: 0, scan_level: 1, wall_heat: [], balls: [], active: false, _lastSeen: 0 };
+    let _lastWrite = 0;
+
+    function createAtoms() {
+        atoms = [];
+        const symbols = Object.keys(GenesisBrain.ELEMENTS);
+        for (let i = 0; i < 30; i++) {
+            const sym = symbols[Math.floor(Math.random() * symbols.length)];
+            const el = GenesisBrain.ELEMENTS[sym];
+            atoms.push({
+                symbol: sym, pulse: el.pulse, type: el.type, logic: el.logic,
+                x: Math.random() * canvas.width, y: Math.random() * canvas.height,
+                vx: (Math.random() - 0.5) * 3, vy: (Math.random() - 0.5) * 3,
+                mass: el.type === 'even' ? 2 : 1,
+                _beatPhase: Math.random() * Math.PI * 2
+            });
+        }
+    }
+
+    function applyPhysics() {
+        // Combined chaos: sim3 boundary chaos (normalized) + band chaos
+        const sim3Chaos = Math.min(1, (sim3State.chaos_ratio || 0) / 10);
+        const cf = 0.005 + Math.max(bandState.chaos, sim3Chaos) * 0.012;
+
+        // Scan level affects exclusion sensitivity — deeper scan = tighter atom clustering
+        const scanFactor = sim3State.scan_level === 3 ? 0.4 : sim3State.scan_level === 2 ? 0.7 : 1.0;
+
+        for (let i = 0; i < atoms.length; i++) {
+            for (let j = i + 1; j < atoms.length; j++) {
+                const a = atoms[i], b = atoms[j];
+                const dx = b.x - a.x, dy = b.y - a.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                if (dist < 100 * scanFactor) {
+                    const force = (a.type !== b.type) ? cf : -(cf * 1.6);
+                    a.vx += dx * force; a.vy += dy * force;
+                    b.vx -= dx * force; b.vy -= dy * force;
+                    if (dist < 30 * scanFactor && a.type !== b.type) {
+                        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+                        ctx.strokeStyle = `rgba(255,255,255,${0.15 + sim3Chaos * 0.3})`;
+                        ctx.lineWidth = 0.6; ctx.stroke();
+                    }
+                }
+            }
+        }
+
+        // Inversions: each sim3 inversion jolts every atom outward from center
+        // We track inversions via sim3State so we only fire once per new inversion
+        if (sim3State._newInversion) {
+            sim3State._newInversion = false;
+            const cx = canvas.width / 2, cy = canvas.height / 2;
+            atoms.forEach(a => {
+                const dx = a.x - cx, dy = a.y - cy;
+                const d = Math.sqrt(dx*dx + dy*dy) || 1;
+                a.vx += (dx / d) * 4 * (0.5 + sim3Chaos);
+                a.vy += (dy / d) * 4 * (0.5 + sim3Chaos);
+            });
+        }
+    }
+
+    function render() {
+        ctx.fillStyle = 'rgba(0,0,0,0.2)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.globalCompositeOperation = 'screen';
+        applyPhysics();
+        const now = Date.now();
+        atoms.forEach(a => {
+            a.x += a.vx; a.y += a.vy;
+            if (bandState.bpm > 0) {
+                const phase = (now * 0.001 * (bandState.bpm/60) * Math.PI * 2) + a._beatPhase;
+                a.vx *= 0.99 * (1.0 + Math.sin(phase) * 0.18 * bandState.chaos);
+                a.vy *= 0.99 * (1.0 + Math.sin(phase) * 0.18 * bandState.chaos);
+            } else { a.vx *= 0.99; a.vy *= 0.99; }
+            const maxSpd = 4 + bandState.chaos * 4;
+            const spd = Math.sqrt(a.vx*a.vx + a.vy*a.vy);
+            if (spd > maxSpd) { a.vx = (a.vx/spd)*maxSpd; a.vy = (a.vy/spd)*maxSpd; }
+            if (a.x < 0) a.x = canvas.width; if (a.x > canvas.width) a.x = 0;
+            if (a.y < 0) a.y = canvas.height; if (a.y > canvas.height) a.y = 0;
+            let radius = a.mass * 4;
+            if (bandState.active && bandState.bpm > 0) {
+                const phase = (now * 0.001 * (bandState.bpm/60) * Math.PI * 2) + a._beatPhase;
+                radius += Math.pow(Math.max(0, Math.sin(phase)), 3) * 6;
+            }
+            const color = GenesisBrain.nmToRGB(a.pulse);
+            ctx.beginPath(); ctx.arc(a.x, a.y, radius, 0, Math.PI*2);
+            ctx.shadowBlur = 15 + bandState.chaos * 20; ctx.shadowColor = color;
+            ctx.fillStyle = color; ctx.fill();
+            ctx.beginPath(); ctx.arc(a.x, a.y, 2, 0, Math.PI*2);
+            ctx.fillStyle = '#fff'; ctx.shadowBlur = 0; ctx.fill();
+        });
+        ctx.globalCompositeOperation = 'source-over';
+
+        // Write every 2s — threshold crossing avoids the old modulo-never-fires bug
+        if (now - _lastWrite > 2000) {
+            _lastWrite = now;
+            const sim3Chaos = Math.min(1, (sim3State.chaos_ratio || 0) / 10);
+            const combinedChaos = Math.max(bandState.chaos, sim3Chaos);
+            const grade = atoms.length > 15 ? 'GRADE_A' : 'GRADE_C';
+            GenesisBrain.write('tech', {
+                atomCount:    atoms.length,
+                activePulses: atoms.map(a => a.pulse),
+                grade,
+                bandReactive: bandState.active,
+                sim3Reactive: sim3State.active,
+                chaos:        combinedChaos,
+                scan_level:   sim3State.scan_level,
+                inversions:   sim3State.inversions,
+            });
+            document.getElementById('combination-status').textContent =
+                `${grade} — ${atoms.length} ATOMS · CHAOS ${(combinedChaos*100).toFixed(0)}%` +
+                (sim3State.active ? ` · SIM LV${sim3State.scan_level}` : '');
+        }
+        requestAnimationFrame(render);
+    }
+
+    window.onload = async () => {
+        canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+        window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
+
+        await GenesisBrain.connect();
+        createAtoms();
+
+        GenesisBrain.on('connected', () => document.getElementById('ws-dot').classList.add('live'));
+
+        // React to sim3colts boundary sim — winding, chaos, inversions, scan level
+        GenesisBrain.on('sim3', (data) => {
+            const prevInversions = sim3State.inversions;
+            sim3State = {
+                chaos_ratio: data.chaos_ratio || 0,
+                inversions:  data.inversions  || 0,
+                scan_level:  data.scan_level  || 1,
+                wall_heat:   data.wall_heat   || [],
+                balls:       data.balls       || [],
+                active:      true,
+                _lastSeen:   Date.now(),
+                // Flag a new inversion so applyPhysics can fire the jolt once
+                _newInversion: (data.inversions || 0) > prevInversions,
+            };
+            // Shift atom pulses toward highest-winding ball's spectral position
+            if (data.balls && data.balls.length > 0) {
+                const maxWinding = data.balls.reduce((best, b) =>
+                    Math.abs(b.winding || 0) > Math.abs(best.winding || 0) ? b : best, data.balls[0]);
+                const spectralTarget = ((Math.abs(maxWinding.winding || 0) * 0.08) % 1.0);
+                atoms.forEach(a => { a.pulse = (a.pulse * 0.97 + spectralTarget * 0.03) % 1.0; });
+            }
+            const scanColors = { 1: '#38bdf8', 2: '#f59e0b', 3: '#a855f7' };
+            const col = scanColors[data.scan_level || 1];
+            document.getElementById('ws-dot').style.boxShadow = `0 0 8px ${col}`;
+        });
+
+        // React to band in real time — pure WS push, zero polling
+        GenesisBrain.on('band', (data) => {
+            bandState = { bpm: data.bpm||0, chaos: data.chaos||0.2, chord_type: data.chord_type||'maj',
+                          winding_bass: data.winding_bass||0, active: true, _lastSeen: Date.now() };
+            document.getElementById('band-status').textContent =
+                `BAND \u266a ${data.bpm|0}BPM \u00b7 ${(data.chord_type||'').toUpperCase()} \u00b7 CHAOS ${((data.chaos||0)*100).toFixed(0)}%`;
+            // Shift atom hues toward the root note's spectral position
+            if (data.root_midi !== undefined) {
+                const rootNorm = (data.root_midi % 12) / 12;
+                atoms.forEach(a => { a.pulse = (a.pulse + rootNorm * 0.05) % 1.0; });
+            }
+        });
+
+        setInterval(() => {
+            const now2 = Date.now();
+            if (bandState.active && now2 - bandState._lastSeen > 5000) {
+                bandState.active = false;
+                document.getElementById('band-status').textContent = 'BAND: OFFLINE';
+            }
+            if (sim3State.active && now2 - sim3State._lastSeen > 5000) {
+                sim3State.active = false;
+            }
+        }, 1000);
+
+        render();
+    };
+</script>
+</body>
+</html>
