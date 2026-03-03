@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Genesis Spectral Link</title>
+    <script src="GenesisBrain.js"></script>
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Syne Mono', monospace; }
+        canvas { display: block; filter: contrast(1.2) brightness(1.1); }
+        .hud {
+            position: fixed; top: 20px; left: 20px;
+            color: #fff; pointer-events: none;
+            display: flex; flex-direction: column; gap: 5px;
+        }
+        .hud-label { font-size: 10px; letter-spacing: 3px; opacity: 0.5; text-transform: uppercase; }
+        #data-readout { font-size: 14px; color: #00ffe7; text-shadow: 0 0 10px #00ffe7; }
+        #band-readout { font-size: 9px; color: rgba(255,183,0,0.8); letter-spacing: 2px; text-transform: uppercase; }
+        #ws-dot {
+            display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+            background: #333; margin-right: 6px; vertical-align: middle;
+            transition: background 0.3s;
+        }
+        #ws-dot.live { background: #00ffe7; box-shadow: 0 0 8px #00ffe7; }
+    </style>
+</head>
+<body>
+<canvas id="spectralView"></canvas>
+<div class="hud">
+    <div class="hud-label"><span id="ws-dot"></span>Energy Spectrum Mapping</div>
+    <div id="data-readout">Awaiting Sim...</div>
+    <div id="band-readout">Band: Offline</div>
+</div>
+
+<script>
+    const canvas = document.getElementById('spectralView');
+    const ctx    = canvas.getContext('2d');
+
+    // Band state — drives glow intensity and trail decay
+    let band = { bpm: 0, chaos: 0.2, active: false, _lastSeen: 0 };
+
+    // Last known balls from sim3 — normalized {x, y, winding, color, glow, type}
+    let lastBalls   = [];
+    // Aggregate winding: sum of |winding| across all balls
+    let lastWinding = 0;
+
+    function resize() {
+        canvas.width  = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+
+    // Render sim3 balls as spectral light trails
+    // Each ball's X position maps to a wavelength (380-750nm)
+    // Ball winding → color shift; glow → radius boost
+    // Band chaos increases glow intensity and decreases trail persistence
+    function render(balls, winding) {
+        if (!balls || balls.length === 0) return;
+
+        // Trail decay — faster when band is chaotic
+        const trailAlpha = 0.12 + band.chaos * 0.08;
+        ctx.fillStyle = `rgba(0,0,0,${trailAlpha})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.globalCompositeOperation = 'screen';
+
+        const cw = canvas.width, ch = canvas.height;
+
+        balls.forEach(b => {
+            // x is already 0-1 normalized — maps directly to visible spectrum
+            // Winding shifts the hue along the spectrum so high-winding balls
+            // appear deeper into the spectrum rather than being purely position-based
+            const spectralPos  = (b.x + Math.abs(b.winding || 0) * 0.04) % 1.0;
+            const color        = GenesisBrain.nmToRGB(spectralPos);
+            const windingBoost = Math.min(1, Math.abs(b.winding || 0) / 5);
+            const glowBoost    = (b.glow || 0);
+            const baseR        = (b.type === 'smith' ? 6 : 4) + band.chaos * 4 + glowBoost * 4;
+            const glowSize     = 14 + band.chaos * 20 + windingBoost * 10
+                + (band.active ? Math.sin(Date.now() * 0.004 * (band.bpm/60||1)) * 3 : 0);
+
+            ctx.beginPath();
+            ctx.arc(b.x * cw, b.y * ch, baseR, 0, Math.PI * 2);
+            ctx.shadowBlur  = glowSize;
+            ctx.shadowColor = color;
+            ctx.fillStyle   = color;
+            ctx.fill();
+
+            // White core — brighter when band is active or ball has high winding
+            ctx.beginPath();
+            ctx.arc(b.x * cw, b.y * ch, 1.5, 0, Math.PI * 2);
+            ctx.fillStyle   = '#fff';
+            ctx.shadowBlur  = 0;
+            ctx.globalAlpha = 0.25 + band.chaos * 0.3 + windingBoost * 0.3;
+            ctx.fill();
+            ctx.globalAlpha = 1.0;
+        });
+
+        // Aggregate winding arc — shows geometric memory of the whole sim
+        if (winding !== 0) {
+            const windNorm  = Math.abs(winding % 100) / 100;
+            const cx = cw / 2, cy = ch / 2;
+            const windColor = GenesisBrain.nmToRGB(windNorm);
+            ctx.beginPath();
+            ctx.arc(cx, cy, 40 + band.chaos * 20, 0, windNorm * Math.PI * 2);
+            ctx.strokeStyle = windColor;
+            ctx.lineWidth   = 1.5;
+            ctx.shadowBlur  = 10;
+            ctx.shadowColor = windColor;
+            ctx.stroke();
+            ctx.shadowBlur  = 0;
+        }
+
+        ctx.globalCompositeOperation = 'source-over';
+
+        document.getElementById('data-readout').textContent =
+            `${balls.length} BALLS · W:${winding.toFixed(1)} · ${band.active ? `♪${band.bpm|0}BPM` : 'BAND OFFLINE'}`;
+    }
+
+    async function init() {
+        resize();
+        window.addEventListener('resize', resize);
+
+        await GenesisBrain.connect();
+
+        // WS live indicator
+        GenesisBrain.on('connected', () => {
+            document.getElementById('ws-dot').classList.add('live');
+        });
+
+        // sim3colts updates — balls array with normalized x/y, winding, glow per ball
+        GenesisBrain.on('sim3', (data) => {
+            if (data.balls?.length) {
+                lastBalls   = data.balls;
+                // Aggregate winding: average |winding| across all balls
+                lastWinding = data.balls.reduce((sum, b) => sum + Math.abs(b.winding || 0), 0)
+                              / data.balls.length;
+                render(lastBalls, lastWinding);
+            }
+        });
+
+        // Band updates — modulates glow and trail behavior
+        GenesisBrain.on('band', (data) => {
+            band = {
+                bpm:       data.bpm   || 0,
+                chaos:     data.chaos || 0.2,
+                active:    true,
+                _lastSeen: Date.now()
+            };
+            document.getElementById('band-readout').textContent =
+                `Band ♪ ${data.bpm|0}bpm · ${(data.chord_type||'').toUpperCase()} · Chaos ${((data.chaos||0)*100).toFixed(0)}%`;
+
+            // Re-render immediately with new band energy
+            if (lastBalls.length) render(lastBalls, lastWinding);
+        });
+
+        // Re-render on any other namespace update — keeps display alive
+        GenesisBrain.on('update', (ns) => {
+            if (ns !== 'sim3' && ns !== 'band' && lastBalls.length) {
+                render(lastBalls, lastWinding);
+            }
+        });
+
+        // Band offline detection
+        setInterval(() => {
+            if (band.active && Date.now() - band._lastSeen > 5000) {
+                band.active = false;
+                document.getElementById('band-readout').textContent = 'Band: Offline';
+            }
+        }, 1000);
+
+        // Idle animation — keeps display alive between updates
+        setInterval(() => {
+            if (lastBalls.length) render(lastBalls, lastWinding);
+        }, 100);
+    }
+
+    init();
+</script>
+</body>
+</html>
