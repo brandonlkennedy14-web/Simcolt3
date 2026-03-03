@@ -743,7 +743,8 @@ function initV1() {
                 winding: b.winding,
                 color: b.color,
                 type: b.type,
-                groupId: b.groupId
+                groupId: b.groupId,
+                glow: 0
             })),
             chaos_ratio: chaosRatio,
             inversions: inversions,
@@ -990,7 +991,7 @@ function initV2() {
         for(let i=0;i<balls.length;i++){
             for(let j=i+1;j<balls.length;j++){
                 let dx=balls[i].x-balls[j].x,dy=balls[i].y-balls[j].y;
-                if(dx*dx+dy*dy<cfg.exclusionDist){
+                if(dx*dx+dy*dy<cfg.exclusionDist*cfg.exclusionDist){
                     let b1=balls[i],b2=balls[j];
                     b1.glowIntensity=Math.min(1,b1.glowIntensity+0.4);
                     b2.glowIntensity=Math.min(1,b2.glowIntensity+0.4);
