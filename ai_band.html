@@ -1,0 +1,2309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Live AI Band — Beyond Bound</title>
+<!-- v3 - neural bass, improv tab, phrase recorder, echoMotif fix -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js" crossorigin></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@700;800&display=swap');
+*{box-sizing:border-box;} body{font-family:'Space Mono',monospace;background:#050810;margin:0;}
+input[type=range]{-webkit-appearance:none;background:transparent;width:100%;}
+input[type=range]::-webkit-slider-track{height:3px;background:#1e2535;border-radius:99px;}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;height:14px;width:14px;border-radius:99px;background:#22d3ee;cursor:pointer;box-shadow:0 0 10px rgba(34,211,238,0.5);margin-top:-5.5px;}
+.syne{font-family:'Syne',sans-serif;}
+.tap-zone{touch-action:none;user-select:none;-webkit-user-select:none;}
+@keyframes pr{0%{transform:scale(1);opacity:.9}100%{transform:scale(2.4);opacity:0}}
+.pr{animation:pr 0.55s ease-out forwards;}
+@keyframes lg{0%,100%{box-shadow:0 0 8px #22d3ee44}50%{box-shadow:0 0 28px #22d3eeaa}}
+.locked{animation:lg 1.5s ease-in-out infinite;}
+@keyframes bg{0%,100%{box-shadow:0 0 12px #10b98155}50%{box-shadow:0 0 30px #10b981cc}}
+.bass-pulse{animation:bg 0.4s ease-out;}
+@keyframes guide-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.guide-in{animation:guide-in 0.4s ease-out;}
+::-webkit-scrollbar{width:3px;}
+::-webkit-scrollbar-track{background:#0a0f18;}
+::-webkit-scrollbar-thumb{background:#1e2535;border-radius:2px;}
+.muted{opacity:0.28;filter:grayscale(0.6);}
+.section-btn{transition:all 0.15s;}
+</style>
+</head>
+<body class="bg-[#050810] text-slate-300 overflow-x-hidden">
+<div id="loading-screen" style="position:fixed;inset:0;background:#050810;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:9999;">
+  <div style="font-family:monospace;font-size:11px;color:#22d3ee;letter-spacing:0.3em;text-transform:uppercase;">Live AI Band</div>
+  <div style="width:48px;height:48px;border:2px solid #1e2535;border-top-color:#22d3ee;border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+  <div id="load-status" style="font-family:monospace;font-size:9px;color:#475569;letter-spacing:0.15em;">Loading engine...</div>
+  <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+</div>
+<div id="root"></div>
+<script>
+// Catch ANY error and display it on the loading screen
+window.onerror = function(msg, src, line, col, err) {
+  var ls = document.getElementById('loading-screen');
+  if (!ls) return;
+  ls.style.display = 'flex';
+  ls.innerHTML = '<div style="font-family:monospace;padding:20px;max-width:90vw;font-size:11px;line-height:1.8;word-break:break-all;color:#f43f5e;">'
+    + '<div style="color:#fff;font-size:14px;margin-bottom:12px;">JS Error</div>'
+    + '<b>Message:</b> ' + msg + '<br>'
+    + '<b>Line:</b> ' + line + ' Col: ' + col + '<br>'
+    + '<b>File:</b> ' + (src||'').split('/').pop()
+    + '</div>';
+};
+window.onunhandledrejection = function(e) {
+  var ls = document.getElementById('loading-screen');
+  if (!ls) return;
+  ls.style.display = 'flex';
+  ls.innerHTML = '<div style="font-family:monospace;padding:20px;max-width:90vw;font-size:11px;line-height:1.8;word-break:break-all;color:#f87171;">'
+    + '<div style="color:#fff;font-size:14px;margin-bottom:12px;">Async Error</div>'
+    + String(e.reason)
+    + '</div>';
+};
+</script>
+<script type="text/babel">
+// Update loading status -- if you see this, Babel compiled successfully
+const _ls=document.getElementById('load-status');if(_ls)_ls.textContent='Compiling...';
+const{useState,useEffect,useRef,useCallback,useMemo}=React;
+const{createRoot}=ReactDOM;
+
+// -- SUPABASE ------------------------------------------------------------------
+// No supabase SDK -- raw fetch only, zero CDN dependency
+const SB_URL='https://xoolmbmnzbsvcqeyqvyi.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhvb2xtYm1uemJzdmNleXhxdnlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDMwNDQsImV4cCI6MjA4NzAxOTA0NH0.ebTwMZ_byU6EXtuR0jynct64QO5ornQrCwElQ5b9TxQ';
+const SB_H={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'};
+const SB_UH={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'};
+const db={
+  from:(t)=>{
+    const url=SB_URL+'/rest/v1/'+t;
+    return {
+      select:()=>({
+        order:(col,opt)=>({
+          limit:(limitN)=>fetch(url+'?select=*&order='+col+'.'+(opt&&opt.ascending?'asc':'desc')+'&limit='+limitN,{headers:SB_H})
+            .then(r=>r.ok?r.json():[])
+            .then(d=>({data:d,error:null}))
+            .catch(e=>({data:[],error:e}))
+        })
+      }),
+      insert:(rows)=>fetch(url,{method:'POST',headers:SB_H,body:JSON.stringify(Array.isArray(rows)?rows[0]:rows)})
+        .then(()=>({error:null}))
+        .catch(e=>({error:e}))
+    };
+  }
+};
+let _gbV=0;
+const gbWrite=async(payload)=>{try{await fetch(SB_URL+'/rest/v1/genesis_brain',{method:'POST',headers:SB_UH,body:JSON.stringify({namespace:'band',version:++_gbV,payload:{...payload,_ts:Date.now()}})}); }catch(e){}}
+
+// -- THEORY --------------------------------------------------------------------
+const NOTE_NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const midiToNote=m=>`${NOTE_NAMES[((m%12)+12)%12]}${Math.floor(m/12)-1}`;
+const PC=[[239,68,68],[249,115,22],[245,158,11],[252,211,77],[132,204,22],[34,197,94],[20,184,166],[6,182,212],[59,130,246],[99,102,241],[168,85,247],[236,72,153]];
+
+const SCALES={major:[0,2,4,5,7,9,11],minor:[0,2,3,5,7,8,10],dorian:[0,2,3,5,7,9,10],mixo:[0,2,4,5,7,9,10],whole:[0,2,4,6,8,10],phrygian:[0,1,3,5,7,8,10]};
+
+// FM ratios encode chord quality mathematically
+const CHORDS={
+  maj:   {iv:[0,4,7],   fm:1.250,label:'maj'},
+  min:   {iv:[0,3,7],   fm:1.200,label:'min'},
+  dom7:  {iv:[0,4,7,10],fm:1.500,label:'7'},
+  maj7:  {iv:[0,4,7,11],fm:1.750,label:'M7'},
+  min7:  {iv:[0,3,7,10],fm:1.400,label:'m7'},
+  quar:  {iv:[0,5,10],  fm:1.333,label:'sus4'},
+  dim:   {iv:[0,3,6],   fm:1.100,label:'dim'},
+  aug:   {iv:[0,4,8],   fm:1.600,label:'aug'},
+  dom9:  {iv:[0,4,7,10,14],fm:1.520,label:'9'},
+  min11: {iv:[0,3,7,10,14],fm:1.450,label:'m11'},
+  lydian:{iv:[0,4,7,11,6], fm:1.780,label:'lyd'},
+};
+
+function bestChord(pcs){
+  if(!pcs||pcs.length<2)return'maj';
+  const root=pcs[0];
+  const ivs=pcs.map(p=>((p-root)+12)%12).sort((a,b)=>a-b);
+  let best='maj',bs=-1;
+  for(const[n,c]of Object.entries(CHORDS)){let s=0;for(const v of c.iv)if(ivs.includes(v%12))s++;if(s>bs){bs=s;best=n;}}
+  return best;
+}
+
+function bestScale(hist){
+  return Object.entries(SCALES).map(([name,sc])=>({name,sc,s:sc.reduce((a,d)=>a+(hist[d]||0),0)})).sort((a,b)=>b.s-a.s)[0];
+}
+
+// -- HAPTIC ENGINE -------------------------------------------------------------
+// Haptic engine -- Android requires vibrate called from user gesture context
+let _hapticUnlocked=false;
+const VIB=(pattern)=>{
+  if(!navigator.vibrate)return;
+  try{
+    // On Android, vibrate must come from user gesture thread
+    // We queue it via a zero-timeout to keep it in the gesture chain
+    if(_hapticUnlocked){
+      navigator.vibrate(Array.isArray(pattern)?pattern:[pattern]);
+    }
+  }catch(e){}
+};
+// Call this on any user interaction to unlock haptics
+const unlockHaptics=()=>{
+  if(_hapticUnlocked)return;
+  try{navigator.vibrate(1);_hapticUnlocked=true;}catch(e){}
+};
+const hap={
+  tap:()=>VIB([20]),
+  kick:()=>VIB([60]),         // long deep for sub feel
+  snare:()=>VIB([15,5,15]),   // double hit
+  hat:()=>VIB([8]),
+  chord:()=>VIB([30,10,30,10,30]),
+  motif:()=>VIB([10,5,10,5,10,5,10]),
+  lockIn:()=>VIB([40,20,80,20,40]),
+  keyChange:()=>VIB([20,10,20,10,60]),
+  restart:()=>VIB([80,30,80]),
+  mute:()=>VIB([15,10,15]),
+  // Rhythm haptic: pattern from array of beat timings
+  rhythm:(pattern)=>VIB(pattern.flatMap(ms=>[ms>0?Math.min(ms,80):20,20])),
+  // Bass sub pulse -- strongest single vibration for deaf users to feel the groove
+  subBass:(bpm)=>{
+    const ms=Math.round(60000/bpm);
+    VIB([ms*0.6,ms*0.4,ms*0.6,ms*0.4,ms*0.6]);
+  },
+  // Chord quality haptic: different patterns for different chords
+  chordQuality:(type)=>{
+    const patterns={maj:[40,20,40],min:[60,15,30],dom7:[30,10,30,10,30],quar:[20,20,20,20],dim:[50,10,50]};
+    VIB(patterns[type]||patterns.maj);
+  },
+};
+
+// -- PROFESSIONAL SIGNAL CHAIN -------------------------------------------------
+//
+//  drums  -> drumComp (transient punch, 2ms attack) -> drumBus ---------------
+//  bass   -> bassComp (Moog-style glue, 8ms attack) -> bassBus --------------
+//  sub    -> subComp  (slow attack, long release)   -> subBus  --------------
+//  mid    ------------------------------------------> send -----------------
+//  lead   ------------------------------------------> send -----------------
+//           [reverb/delay/chorus insert on send] -------------------------
+//  ALL buses -------------------------------------------------------------> masterComp
+//                                                                          -> limiter (-0.5 dBFS)
+//                                                                          -> out
+//
+// Sub and bass NEVER share stage simultaneously -- scheduler alternates them.
+// Sub bus is low-passed at 120Hz so it only contains true sub frequencies.
+// Drum bus has high-pass at 30Hz to prevent sub clash with kick sub layer.
+
+class AudioBus{
+  constructor(){
+    this.ctx=null;this.inited=false;
+    // Bus input nodes (synths connect here)
+    this.drumBus=null;this.bassBus=null;this.subBus=null;this.send=null;
+    // Compressors
+    this.drumComp=null;this.bassComp=null;this.subComp=null;this.masterComp=null;
+    // Limiter
+    this.limiter=null;
+    // FX
+    this.reverbWet=null;this.convolver=null;
+    this.delayNode=null;this.delayWet=null;
+    this.chorusDelay=null;this.chorusWet=null;
+    this.fxEnabled={reverb:false,delay:false,chorus:false};
+  }
+
+  init(ctx){
+    if(this.inited&&this.ctx===ctx)return;
+    this.ctx=ctx;this.inited=true;
+
+    // -- LIMITER: brick wall at -0.5 dBFS -- speakers safe, nothing clips ---
+    // threshold=-0.5dB, ratio=20:1, knee=0, attack=0.001s, release=0.05s
+    this.limiter=ctx.createDynamicsCompressor();
+    this.limiter.threshold.value=-0.5;
+    this.limiter.knee.value=0;       // hard knee -- true brickwall
+    this.limiter.ratio.value=20.0;   // effectively infinite limiting
+    this.limiter.attack.value=0.001; // 1ms -- catches fast transients
+    this.limiter.release.value=0.05; // 50ms -- quick recovery
+    this.limiter.connect(ctx.destination);
+
+    // -- MASTER BUS COMPRESSOR: glue everything together ------------------
+    // Gentle 2:1, slow attack so transients punch through
+    this.masterComp=ctx.createDynamicsCompressor();
+    this.masterComp.threshold.value=-14;
+    this.masterComp.knee.value=6;
+    this.masterComp.ratio.value=2.5;
+    this.masterComp.attack.value=0.025;  // 25ms -- lets kick/snare transients breathe
+    this.masterComp.release.value=0.18;  // 180ms
+    this.masterComp.connect(this.limiter);
+
+    const masterGain=ctx.createGain();masterGain.gain.value=0.80;
+    masterGain.connect(this.masterComp);
+
+    // -- DRUM BUS: transient shaper compressor ----------------------------
+    // Very fast attack (2ms) squashes body slightly for punch, slow release
+    // lets the tail breathe. Classic "NY compression" on drums.
+    this.drumComp=ctx.createDynamicsCompressor();
+    this.drumComp.threshold.value=-18;
+    this.drumComp.knee.value=3;
+    this.drumComp.ratio.value=4.0;   // 4:1 for controlled transients
+    this.drumComp.attack.value=0.002; // 2ms -- very fast, catches body
+    this.drumComp.release.value=0.12; // 120ms release -- lets tail through
+    this.drumComp.connect(masterGain);
+    // HPF on drum bus -- stops sub-octave mud from kick sub colliding with sub bus
+    const drumHPF=ctx.createBiquadFilter();drumHPF.type='highpass';drumHPF.frequency.value=28;drumHPF.Q.value=0.5;
+    drumHPF.connect(this.drumComp);
+    this.drumBus=ctx.createGain();this.drumBus.gain.value=0.95;
+    this.drumBus.connect(drumHPF);
+
+    // -- BASS BUS: Moog-style glue compressor -----------------------------
+    // 8ms attack preserves the attack pluck/slap, 4:1 for consistent sustain
+    // HPF at 60Hz -- anything below is sub territory, not bass territory
+    this.bassComp=ctx.createDynamicsCompressor();
+    this.bassComp.threshold.value=-20;
+    this.bassComp.knee.value=4;
+    this.bassComp.ratio.value=4.0;
+    this.bassComp.attack.value=0.008;  // 8ms -- preserves attack character
+    this.bassComp.release.value=0.20;  // 200ms smooth release
+    this.bassComp.connect(masterGain);
+    const bassHPF=ctx.createBiquadFilter();bassHPF.type='highpass';bassHPF.frequency.value=55;bassHPF.Q.value=0.7;
+    const bassLPF=ctx.createBiquadFilter();bassLPF.type='lowpass';bassLPF.frequency.value=600;bassLPF.Q.value=0.5;
+    bassHPF.connect(bassLPF);bassLPF.connect(this.bassComp);
+    this.bassBus=ctx.createGain();this.bassBus.gain.value=0.88;
+    this.bassBus.connect(bassHPF);
+
+    // -- SUB BUS: dedicated sub bass -- strictly below 120Hz ---------------
+    // Slow attack (20ms) preserves the sub "blooom", long release for sustain
+    // LPF at 120Hz -- ONLY sub frequencies pass. Nothing above 120Hz.
+    this.subComp=ctx.createDynamicsCompressor();
+    this.subComp.threshold.value=-16;
+    this.subComp.knee.value=8;       // soft knee -- sub needs smooth control
+    this.subComp.ratio.value=3.0;    // gentler ratio -- sub needs to breathe
+    this.subComp.attack.value=0.020; // 20ms -- slow, preserves sub bloom
+    this.subComp.release.value=0.35; // 350ms -- long release, sub decays slowly
+    this.subComp.connect(masterGain);
+    const subLPF=ctx.createBiquadFilter();subLPF.type='lowpass';subLPF.frequency.value=120;subLPF.Q.value=0.4;
+    const subLPF2=ctx.createBiquadFilter();subLPF2.type='lowpass';subLPF2.frequency.value=120;subLPF2.Q.value=0.4;
+    subLPF.connect(subLPF2);subLPF2.connect(this.subComp); // double LP for steep rolloff
+    this.subBus=ctx.createGain();this.subBus.gain.value=1.0;
+    this.subBus.connect(subLPF);
+
+    // -- HARMONIC SEND BUS: mid + lead + reverb/delay/chorus --------------
+    this.send=ctx.createGain();this.send.gain.value=1.0;
+
+    // REVERB -- plate IR
+    const irLen=Math.floor(ctx.sampleRate*2.8);
+    const irBuf=ctx.createBuffer(2,irLen,ctx.sampleRate);
+    for(let ch=0;ch<2;ch++){const d=irBuf.getChannelData(ch);for(let i=0;i<irLen;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/irLen,3.0)*(ch===0?1:-0.97);}
+    this.convolver=ctx.createConvolver();this.convolver.buffer=irBuf;
+    this.reverbWet=ctx.createGain();this.reverbWet.gain.value=0;
+    this.send.connect(this.reverbWet);this.reverbWet.connect(this.convolver);this.convolver.connect(masterGain);
+
+    // DELAY -- dotted 3/8, HPF+LPF feedback to prevent mud buildup
+    this.delayNode=ctx.createDelay(2.0);this.delayNode.delayTime.value=0.3;
+    const fb=ctx.createGain();fb.gain.value=0.36;
+    const dHpf=ctx.createBiquadFilter();dHpf.type='highpass';dHpf.frequency.value=400;
+    const dLpf=ctx.createBiquadFilter();dLpf.type='lowpass';dLpf.frequency.value=4800;
+    this.delayWet=ctx.createGain();this.delayWet.gain.value=0;
+    this.send.connect(this.delayWet);this.delayWet.connect(this.delayNode);
+    this.delayNode.connect(dHpf);dHpf.connect(dLpf);dLpf.connect(fb);
+    fb.connect(this.delayNode);this.delayNode.connect(masterGain);
+
+    // CHORUS -- dual LFO delay
+    this.chorusDelay=ctx.createDelay(0.08);this.chorusDelay.delayTime.value=0.022;
+    const c2=ctx.createDelay(0.08);c2.delayTime.value=0.028;
+    const lfo1=ctx.createOscillator();const lg1=ctx.createGain();
+    const lfo2=ctx.createOscillator();const lg2=ctx.createGain();
+    lfo1.frequency.value=0.55;lg1.gain.value=0.009;lfo1.connect(lg1);lg1.connect(this.chorusDelay.delayTime);
+    lfo2.frequency.value=0.82;lg2.gain.value=0.007;lfo2.connect(lg2);lg2.connect(c2.delayTime);
+    lfo1.start();lfo2.start();
+    this.chorusWet=ctx.createGain();this.chorusWet.gain.value=0;
+    this.send.connect(this.chorusWet);
+    this.chorusWet.connect(this.chorusDelay);this.chorusDelay.connect(masterGain);
+    this.chorusWet.connect(c2);c2.connect(masterGain);
+
+    // Dry send to master
+    this.send.connect(masterGain);
+  }
+
+  // Route synths to the correct bus
+  // sub and bass are SEPARATE -- sub goes below 120Hz, bass sits 60-600Hz
+  getInput(type){
+    if(!this.ctx)return null;
+    if(type==='drum')return this.drumBus;
+    if(type==='sub') return this.subBus;
+    if(type==='bass')return this.bassBus;
+    return this.send;  // mid, lead, echo
+  }
+
+  toggleFx(name){
+    if(!this.ctx)return false;
+    this.fxEnabled[name]=!this.fxEnabled[name];
+    const on=this.fxEnabled[name];
+    const nodes={reverb:this.reverbWet,delay:this.delayWet,chorus:this.chorusWet};
+    if(nodes[name]){
+      nodes[name].gain.cancelScheduledValues(this.ctx.currentTime);
+      nodes[name].gain.setTargetAtTime(on?0.42:0,this.ctx.currentTime,0.08);
+    }
+    return on;
+  }
+
+  updateDelayTime(bpm){
+    if(this.delayNode&&this.ctx)
+      this.delayNode.delayTime.setTargetAtTime(Math.min(1.9,60/bpm*0.375),this.ctx.currentTime,0.05);
+  }
+
+  // Expose compression reduction for metering in UI
+  getGainReduction(){
+    if(!this.masterComp)return{master:0,drum:0,bass:0,sub:0};
+    return{
+      master:Math.round(this.masterComp.reduction*10)/10,
+      drum:  Math.round((this.drumComp?.reduction||0)*10)/10,
+      bass:  Math.round((this.bassComp?.reduction||0)*10)/10,
+      sub:   Math.round((this.subComp?.reduction||0)*10)/10,
+    };
+  }
+}
+const bus=new AudioBus();
+
+// -- MOTIF ENGINE (robust: handles jazz, polyrhythm, Indian tala) --------------
+class MotifEngine{
+  constructor(){
+    this.pitchBuf=[];
+    this.rhythmBuf=[];
+    this.motifs=[];
+    this.phrases=[];          // completed sung phrases (start tap -> end tap)
+    this.currentPhrase=null;  // phrase being recorded
+    this.echoQueue=[];
+    this.reharmonizations=[];
+    this.keyHistory=[];
+    this.timeSignatures=[];   // detected per-phrase time sigs
+  }
+
+  // Called when user taps to START a phrase
+  startPhrase(){
+    this.currentPhrase={pitches:[],onsets:[],startTime:Date.now()};
+  }
+
+  // Called when user taps to END a phrase -- full analysis runs here
+  endPhrase(){
+    if(!this.currentPhrase||this.currentPhrase.pitches.length<2)return null;
+    const p=this.currentPhrase;
+    const dur=Date.now()-p.startTime;
+
+    // Interval vector -- intervals between consecutive pitches
+    const ivs=p.pitches.slice(1).map((n,i)=>n-p.pitches[i]);
+
+    // Turnaround detection: last 2 intervals reverse direction and land near root
+    const hasTA=ivs.length>=3&&Math.sign(ivs[ivs.length-1])!==Math.sign(ivs[ivs.length-2])
+      &&Math.abs(((p.pitches[p.pitches.length-1]-p.pitches[0])%12+12)%12)<=2;
+
+    // Key detection from pitch class histogram
+    const hist=new Array(12).fill(0);
+    p.pitches.forEach(n=>hist[((n%12)+12)%12]++);
+    const root=hist.indexOf(Math.max(...hist));
+
+    // Time signature from onset spacings
+    let timeSig=4;
+    if(p.onsets.length>=3){
+      const gaps=p.onsets.slice(1).map((t,i)=>t-p.onsets[i]);
+      const med=gaps.sort((a,b)=>a-b)[Math.floor(gaps.length/2)];
+      const beats=Math.round(dur/med);
+      if(beats>=2&&beats<=9)timeSig=beats;
+    }
+
+    // Chord inversion detection: lowest pitch in phrase vs root
+    const lowestPc=((Math.min(...p.pitches)%12)+12)%12;
+    const inversion=lowestPc===root?0:
+      ((lowestPc-root+12)%12===4)?1:  // 1st inv (3rd in bass)
+      ((lowestPc-root+12)%12===7)?2:0; // 2nd inv (5th in bass)
+
+    // Reharmonization suggestions based on intervals
+    const hasMinor3rd=ivs.some(v=>Math.abs(v)===3);
+    const hasTritone=ivs.some(v=>Math.abs(v)===6);
+    const reharmonSuggestion=hasTritone?'dim':hasMinor3rd?'min7':'maj7';
+
+    const phrase={
+      ivs,root,timeSig,inversion,hasTA,reharmonSuggestion,
+      dur,pitches:[...p.pitches],onsets:[...p.onsets],
+      t:Date.now()
+    };
+    this.phrases.push(phrase);
+    if(this.phrases.length>16)this.phrases.shift();
+
+    // Queue echo with reharmonization
+    if(ivs.length>0){
+      this.echoQueue.push({ivs,root:p.pitches[0],transpose:7,reharmonSuggestion});
+    }
+
+    // Track time signatures heard
+    this.timeSignatures.push(timeSig);
+
+    this.currentPhrase=null;
+    return phrase;
+  }
+
+  addPitch(midi,t){
+    this.pitchBuf.push({midi,t});
+    if(this.pitchBuf.length>32)this.pitchBuf.shift();
+    if(this.currentPhrase){
+      this.currentPhrase.pitches.push(midi);
+      this.currentPhrase.onsets.push(t);
+    }
+    return this._findMotif();
+  }
+
+  addOnset(t){
+    this.rhythmBuf.push(t);
+    if(this.rhythmBuf.length>32)this.rhythmBuf.shift();
+    return this._analyzeRhythm();
+  }
+
+  _analyzeRhythm(){
+    if(this.rhythmBuf.length<4)return null;
+    const gaps=this.rhythmBuf.slice(1).map((t,i)=>t-this.rhythmBuf[i]);
+    const sorted=[...gaps].sort((a,b)=>a-b);
+    const median=sorted[Math.floor(sorted.length/2)];
+    const filtered=gaps.filter(g=>g>median*0.15&&g<median*3.5);
+    if(!filtered.length)return null;
+    const avgGap=filtered.reduce((a,b)=>a+b)/filtered.length;
+    const bpm=Math.round(60000/avgGap);
+    if(bpm<30||bpm>300)return null;
+    let lng=0,sht=0,n=0;
+    for(let i=0;i<filtered.length-1;i+=2){lng+=filtered[i];sht+=filtered[i+1];n++;}
+    const swingRatio=n&&sht?((lng/n)/(sht/n)):1.0;
+    const swingPct=Math.min(100,Math.max(0,Math.round((swingRatio-1.0)*100)));
+    const minGap=Math.min(...filtered);
+    const subdivisions=Math.round(avgGap/minGap);
+    return{bpm,swingPct,subdivisions,swingRatio};
+  }
+
+  _findMotif(){
+    if(this.pitchBuf.length<3)return false;
+    const recent=this.pitchBuf.slice(-6);
+    const ivs=recent.slice(1).map((p,i)=>p.midi-recent[i].midi);
+    const range=Math.max(...ivs.map(Math.abs));
+    if(range>15||ivs.every(v=>v===ivs[0]))return false;
+    const sig=ivs.join(',');
+    if(!this.motifs.some(m=>m.sig===sig)){
+      this.motifs.push({sig,ivs,root:recent[0].midi,t:Date.now()});
+      if(this.motifs.length>12)this.motifs.shift();
+      this.echoQueue.push({ivs,root:recent[0].midi,transpose:7});
+      return true;
+    }
+    return false;
+  }
+
+  detectKeyChange(prevRoot,newRoot){
+    return Math.abs(((newRoot-prevRoot+6)%12)-6)>=3;
+  }
+
+  // Returns most common time signature from phrase history
+  dominantTimeSig(){
+    if(!this.timeSignatures.length)return 4;
+    const counts={};
+    this.timeSignatures.forEach(t=>counts[t]=(counts[t]||0)+1);
+    return parseInt(Object.entries(counts).sort((a,b)=>b[1]-a[1])[0][0]);
+  }
+
+  popEcho(){return this.echoQueue.shift()||null;}
+}
+const motifEng=new MotifEngine();
+
+// -- Q-LEARNING HARMONY BRAIN --------------------------------------------------
+class Brain{
+  constructor(){this.q={};this.n=0;this.eps=0.35;}
+  con(iv){const m=((iv%12)+12)%12;return{0:1.0,7:.92,5:.88,4:.80,3:.72,9:.68,8:.62,2:.40,10:.40,1:.08,6:.05,11:.18}[m]??0.3;}
+  choose(role,opts,chaos){
+    this.n++;this.eps=Math.max(0.04,0.35-this.n*0.0002);
+    if(Math.random()>this.eps){let b=opts[0],bw=-Infinity;for(const v of opts){const k=`${role}_${((v%12)+12)%12}`;const w=(this.q[k]??0.5)*(1+this.con(v)*(1-chaos*.6));if(w>bw){bw=w;b=v;}}return b;}
+    return opts[Math.floor(Math.random()*opts.length)];
+  }
+  reward(role,iv,val){const k=`${role}_${((iv%12)+12)%12}`;this.q[k]=(this.q[k]??0.5)+0.08*(val-(this.q[k]??0.5));}
+  auto(role,ivs,chaos){for(const v of ivs)this.reward(role,v,this.con(v)*(1-chaos*.4));}
+  get quality(){return Math.min(1,this.n/400);}
+}
+const brain=new Brain();
+
+// -- VOICE MEMORY --------------------------------------------------------------
+class VoiceMemory{
+  constructor(role){
+    this.role=role;this.winding=0;this.lastNote=null;this.glow=0;
+    this.angle=Math.random()*Math.PI*2;this.x=0;this.y=0;
+    this.col={drum:[243,68,68],bass:[245,158,11],mid:[168,85,247],lead:[34,211,238]}[role]||[120,120,120];
+    this.sample=null; // last unique generated sound params
+  }
+  play(){this.winding+=0.12;this.glow=Math.min(1,this.glow+0.65);}
+  tick(){this.glow*=0.90;this.angle+=0.007+this.winding*0.002;}
+}
+
+// -- SYNTHESIS -----------------------------------------------------------------
+// Every hit is uniquely generated -- random seeds shape timbre, not just volume.
+// No two kicks, snares, hats, or bass notes sound identical.
+
+// Unique seed -> unique timbre parameters for each hit
+function drumSeed(){return{
+  pitch:   0.85+Math.random()*0.30,   // fundamental pitch offset
+  punch:   0.72+Math.random()*0.26,   // attack intensity
+  decay:   0.38+Math.random()*0.28,   // body length
+  tone:    0.60+Math.random()*0.40,   // tonal vs noisy balance
+  sub:     0.50+Math.random()*0.50,   // sub-octave weight
+  click:   0.30+Math.random()*0.70,   // transient click brightness
+  color:   Math.random(),             // spectral character (used differently per drum)
+};}
+
+function synthKick(ctx,t,warp,dest,inputEnergy=0.5){
+  const s=drumSeed();
+  // Each kick has its own unique fundamental, sub weight, click character
+  const f0=(120+s.pitch*100+inputEnergy*60)*warp;  // unique start freq per hit
+  const f1=(28+s.pitch*18)*warp;                   // unique landing freq
+  const decay=(s.decay+inputEnergy*0.18)/warp;
+  const punch=s.punch*(0.75+inputEnergy*0.22);
+
+  // -- BODY: sine sweep with unique slope shape ----------------------------
+  const body=ctx.createOscillator();body.type='sine';
+  body.frequency.setValueAtTime(f0,t);
+  body.frequency.setValueAtTime(f0*0.92,t+0.002);  // initial dip unique per hit
+  body.frequency.exponentialRampToValueAtTime(f1,t+decay);
+  const bg=ctx.createGain();
+  bg.gain.setValueAtTime(0,t);
+  bg.gain.linearRampToValueAtTime(punch,t+0.003);
+  bg.gain.setValueAtTime(punch*(0.88+s.punch*0.08),t+0.010);
+  bg.gain.exponentialRampToValueAtTime(0.001,t+decay+0.06);
+  body.connect(bg);bg.connect(dest);body.start(t);body.stop(t+decay+0.12);
+
+  // -- SUB LAYER: unique overtone content shaped by s.sub and s.color -----
+  // Mix of sine + soft saturation for physical feel (deaf users)
+  const subFreq=(22+s.pitch*14)*warp;
+  const sub1=ctx.createOscillator();sub1.type='sine';sub1.frequency.value=subFreq;
+  const sub2=ctx.createOscillator();sub2.type='sine';sub2.frequency.value=subFreq*1.5; // 3rd harmonic, unique mix
+  const sg1=ctx.createGain();sg1.gain.setValueAtTime(s.sub*0.65*punch,t);sg1.gain.exponentialRampToValueAtTime(0.001,t+decay*1.5);
+  const sg2=ctx.createGain();sg2.gain.setValueAtTime(s.color*0.25*punch,t);sg2.gain.exponentialRampToValueAtTime(0.001,t+decay*0.9);
+  // Soft clip for warmth without harsh distortion
+  const dist=ctx.createWaveShaper();
+  const cv=new Float32Array(512);for(let i=0;i<512;i++){const x=i*2/512-1;cv[i]=Math.tanh(x*(1.5+s.sub));}
+  dist.curve=cv;
+  sub1.connect(sg1);sub2.connect(sg2);
+  const subMix=ctx.createGain();subMix.gain.value=1;
+  sg1.connect(subMix);sg2.connect(subMix);subMix.connect(dist);dist.connect(dest);
+  sub1.start(t);sub2.start(t);sub1.stop(t+decay*1.6);sub2.stop(t+decay*1.0);
+
+  // -- CLICK: unique high-freq transient, pitch and duration vary per hit --
+  const ckFreq=(220+s.click*280)*warp;
+  const click=ctx.createOscillator();click.type='square';
+  click.frequency.setValueAtTime(ckFreq,t);
+  click.frequency.exponentialRampToValueAtTime(ckFreq*0.18,t+0.038/warp);
+  const cg=ctx.createGain();
+  cg.gain.setValueAtTime(s.click*0.45,t);
+  cg.gain.exponentialRampToValueAtTime(0.001,t+(0.030+s.click*0.025)/warp);
+  click.connect(cg);cg.connect(dest);click.start(t);click.stop(t+0.065/warp);
+}
+
+function synthSnare(ctx,t,chaos,warp,dest,inputTight=0.5){
+  const s=drumSeed();
+  const bodyFreq=(155+s.pitch*90+inputTight*50)*warp;
+  const tightness=s.tone*(0.5+inputTight*0.5);
+
+  // -- BODY: tonal thump -- unique pitch and decay per hit ------------------
+  const body=ctx.createOscillator();
+  body.type=s.color>0.5?'triangle':'sine';  // varies timbre class
+  body.frequency.setValueAtTime(bodyFreq,t);
+  body.frequency.exponentialRampToValueAtTime(bodyFreq*(0.55+s.tone*0.2),t+0.09/warp);
+  const bg=ctx.createGain();
+  bg.gain.setValueAtTime(s.punch*0.62,t);
+  bg.gain.exponentialRampToValueAtTime(0.001,t+(0.14+s.decay*0.08)/warp);
+  body.connect(bg);bg.connect(dest);body.start(t);body.stop(t+0.25/warp);
+
+  // -- RING: metallic overtone, unique ratio and decay ---------------------
+  if(s.color>0.3){  // not every hit has ring -- variation
+    const ring=ctx.createOscillator();ring.type='sine';
+    ring.frequency.value=bodyFreq*(1.4+s.color*0.8);  // unique ring pitch
+    const rg=ctx.createGain();
+    rg.gain.setValueAtTime(s.color*0.22,t);
+    rg.gain.exponentialRampToValueAtTime(0.001,t+(0.06+s.color*0.06)/warp);
+    ring.connect(rg);rg.connect(dest);ring.start(t);ring.stop(t+0.16/warp);
+  }
+
+  // -- CRACK: unique noise burst -- different spectral shape every hit ------
+  // Generate noise with unique RNG seed pattern for spectral variety
+  const crLen=Math.floor(ctx.sampleRate*(0.028+tightness*0.030));
+  const crBuf=ctx.createBuffer(1,crLen,ctx.sampleRate);
+  const crD=crBuf.getChannelData(0);
+  const seed1=s.click,seed2=s.color;
+  for(let i=0;i<crLen;i++){
+    const noiseVal=(Math.random()*2-1);
+    const shape=Math.pow(1-i/crLen,0.6+seed1);
+    crD[i]=noiseVal*shape*(1+seed2*Math.sin(i*0.08+seed1*10));
+  }
+  const crack=ctx.createBufferSource();crack.buffer=crBuf;
+  const ckHpf=ctx.createBiquadFilter();ckHpf.type='highpass';ckHpf.frequency.value=(2200+s.click*2800)*warp;
+  const cg=ctx.createGain();cg.gain.setValueAtTime(s.click*0.90,t);cg.gain.exponentialRampToValueAtTime(0.001,t+0.045/warp);
+  crack.connect(ckHpf);ckHpf.connect(cg);cg.connect(dest);crack.start(t);
+
+  // -- TAIL: snare wire noise -- unique length, brightness, and texture ------
+  const tLen=Math.floor(ctx.sampleRate*(0.16+chaos*0.12+s.decay*0.08)/warp);
+  const tBuf=ctx.createBuffer(2,tLen,ctx.sampleRate);  // stereo for width
+  for(let ch=0;ch<2;ch++){
+    const td=tBuf.getChannelData(ch);
+    for(let i=0;i<tLen;i++){
+      td[i]=(Math.random()*2-1)*(ch===0?1+s.color*0.3:1-s.color*0.3);  // L/R differ
+    }
+  }
+  const tail=ctx.createBufferSource();tail.buffer=tBuf;
+  const hpf=ctx.createBiquadFilter();hpf.type='highpass';hpf.frequency.value=(1200+chaos*2000+s.color*1200)*warp;
+  const lpf=ctx.createBiquadFilter();lpf.type='lowpass';lpf.frequency.value=(8000+s.click*6000)*warp;
+  const tg=ctx.createGain();tg.gain.setValueAtTime(s.tone*0.52,t);tg.gain.exponentialRampToValueAtTime(0.001,t+(0.18+s.decay*0.10)/warp);
+  tail.connect(hpf);hpf.connect(lpf);lpf.connect(tg);tg.connect(dest);tail.start(t);
+}
+
+function synthHat(ctx,t,open,chaos,warp,dest,inputBright=0.5){
+  const s=drumSeed();
+  const dur=(open?(0.22+s.decay*0.18):(0.028+s.tone*0.022))/warp;
+
+  // -- METALLIC NOISE: 6-oscillator cymbal model, unique frequencies per hit -
+  // Real cymbals are inharmonic -- we pick random ratios near irrational intervals
+  const baseFreq=(400+s.pitch*300)*warp;
+  const ratios=[1, 1.483+s.color*0.08, 1.932+s.sub*0.06, 2.546+s.click*0.10, 3.175+s.tone*0.08, 4.023+s.punch*0.12];
+  const metalMix=ctx.createGain();metalMix.gain.value=1;metalMix.connect(dest);
+  ratios.forEach((r,i)=>{
+    const o=ctx.createOscillator();o.type='square';
+    o.frequency.value=baseFreq*r*(0.997+Math.random()*0.006); // micro-detune
+    const g=ctx.createGain();
+    const vol=(i<2?0.28:0.12)*s.punch/(i+1);
+    g.gain.setValueAtTime(vol,t);
+    g.gain.exponentialRampToValueAtTime(0.001,t+dur*(0.4+i*0.12));
+    o.connect(g);g.connect(metalMix);o.start(t);o.stop(t+dur+0.02);
+  });
+
+  // -- NOISE LAYER: unique spectral window per hit --------------------------
+  const nLen=Math.floor(ctx.sampleRate*Math.min(dur+0.015,0.45));
+  const nBuf=ctx.createBuffer(1,nLen,ctx.sampleRate);
+  const nD=nBuf.getChannelData(0);
+  for(let i=0;i<nLen;i++)nD[i]=Math.random()*2-1;
+  const ns=ctx.createBufferSource();ns.buffer=nBuf;
+
+  // High-pass with unique frequency per hit -- different tonal color each time
+  const h1=ctx.createBiquadFilter();h1.type='highpass';
+  h1.frequency.value=(5500+inputBright*3500+s.click*2000)*warp;
+  const h2=ctx.createBiquadFilter();h2.type='bandpass';
+  h2.frequency.value=(8000+s.color*5000)*warp;h2.Q.value=0.4+s.tone*0.5;
+  const ng=ctx.createGain();
+  ng.gain.setValueAtTime(open?0.22:0.16,t);ng.gain.exponentialRampToValueAtTime(0.001,t+dur);
+  ns.connect(h1);h1.connect(h2);h2.connect(ng);ng.connect(dest);ns.start(t);
+}
+
+// -- SUB BASS: dedicated sub instrument, routes to subBus (below 120Hz) --------
+// Sub bass holds a note for longer -- it's a sustained low-end foundation.
+// Stage rule: when sub is playing, bass rests. They alternate, never stack.
+// -- NEURAL SUB BASS ENGINE ---------------------------------------------------
+// Deep learning-inspired: winding number history shapes every parameter.
+// Each note is generated by a "neural" weight vector trained on recent play.
+// Sub uses 5-layer harmonic stack + FM modulation + chaos-driven waveshaping.
+
+// Mini neural layer: maps input vector to output weights via tanh activations
+function neuralLayer(inputs, weights){
+  // Single hidden-layer network: inputs -> tanh -> weighted sum -> sigmoid
+  const hidden = weights.map(row => Math.tanh(row.reduce((s,w,wi)=>s+w*(inputs[wi]||0),0)));
+  return hidden.reduce((s,h)=>s+h,0)/hidden.length;
+}
+
+// Bass "brain" -- evolves weights based on recent winding numbers and chaos
+const bassBrain={
+  weights: Array.from({length:8},()=>Array.from({length:6},()=>Math.random()*2-1)),
+  history: [],
+  update(winding, chaos, pcMod, beat){
+    const inputs=[winding/10, chaos, pcMod, beat/16, Math.sin(winding), Math.cos(chaos*Math.PI)];
+    this.history.push(inputs);
+    if(this.history.length>32)this.history.shift();
+    // Hebbian-style update: reinforce weights that correlate with recent patterns
+    if(this.history.length>4){
+      const prev=this.history[this.history.length-5];
+      this.weights=this.weights.map(row=>row.map((w,i)=>
+        Math.max(-2,Math.min(2, w + 0.012*(inputs[i]-prev[i])*Math.tanh(w)))
+      ));
+    }
+    return inputs;
+  },
+  infer(inputs){
+    return{
+      harmonicMix:  (neuralLayer(inputs,this.weights.slice(0,2))+1)/2,  // 0-1
+      attackTime:   Math.abs(neuralLayer(inputs,this.weights.slice(2,4)))*0.08,
+      filterCutoff: (neuralLayer(inputs,this.weights.slice(4,6))+1)/2,
+      satAmount:    Math.abs(neuralLayer(inputs,this.weights.slice(6,8)))*3+0.5,
+      subFreqMod:   neuralLayer(inputs,this.weights)*0.03,  // micro-detune
+    };
+  }
+};
+
+function synthSubBass(ctx, t, note, chaos, warp, windBoost=0, beat=0){
+  const dest=bus.getInput('sub'); if(!dest)return;
+  const freq=440*Math.pow(2,(note-69)/12)*warp;
+  const s=drumSeed();
+  const pc=((note%12)+12)%12; const pcMod=pc/12;
+  const subHz=freq*0.5;
+
+  // Neural inference -- winding history shapes this note's timbre
+  const inputs=bassBrain.update(windBoost*10, chaos, pcMod, beat);
+  const nn=bassBrain.infer(inputs);
+
+  // -- LAYER 1: Primary sub fundamental ---------------------------------
+  const f1=subHz*(1+nn.subFreqMod+s.sub*0.008);
+  const osc1=ctx.createOscillator(); osc1.type='sine'; osc1.frequency.value=f1;
+  const holdTime=(0.75+s.decay*0.5+windBoost*0.15)/warp;
+
+  // Attack shape is neural-driven -- sometimes slow bloom, sometimes punchy
+  const attackT=Math.max(0.004, nn.attackTime*(1+chaos*0.5));
+  const g1=ctx.createGain();
+  g1.gain.setValueAtTime(0,t);
+  g1.gain.linearRampToValueAtTime(0.80+windBoost*0.12, t+attackT);
+  g1.gain.setValueAtTime(0.72+windBoost*0.10, t+holdTime*0.65);
+  g1.gain.exponentialRampToValueAtTime(0.001, t+holdTime);
+
+  // -- LAYER 2: 2nd harmonic (octave up) -- neural mix controls presence -
+  const osc2=ctx.createOscillator(); osc2.type='sine'; osc2.frequency.value=f1*2;
+  const g2=ctx.createGain();
+  const h2vol=nn.harmonicMix*0.28+s.color*0.08;
+  g2.gain.setValueAtTime(h2vol,t+attackT*0.5);
+  g2.gain.exponentialRampToValueAtTime(0.001,t+holdTime*0.7);
+
+  // -- LAYER 3: 3rd harmonic -- adds growl, driven by chaos -------------
+  const osc3=ctx.createOscillator(); osc3.type='sine'; osc3.frequency.value=f1*3;
+  const g3=ctx.createGain();
+  const h3vol=chaos*0.15*nn.harmonicMix+windBoost*0.06;
+  g3.gain.setValueAtTime(h3vol,t+attackT);
+  g3.gain.exponentialRampToValueAtTime(0.001,t+holdTime*0.45);
+
+  // -- LAYER 4: FM sideband -- unique timbral complexity per note --------
+  const fmCarrier=ctx.createOscillator(); fmCarrier.type='sine'; fmCarrier.frequency.value=f1;
+  const fmMod=ctx.createOscillator(); fmMod.type='sine';
+  // FM ratio shifts with pitch class: gives each note unique character
+  const fmRatio=1.0+pcMod*0.5+chaos*0.3+s.tone*0.2;
+  fmMod.frequency.value=f1*fmRatio;
+  const fmDepth=ctx.createGain();
+  fmDepth.gain.value=f1*(0.12+windBoost*0.18+chaos*0.22+s.sub*0.15);
+  fmMod.connect(fmDepth); fmDepth.connect(fmCarrier.frequency);
+  const g4=ctx.createGain();
+  const fmVol=nn.filterCutoff*0.35+chaos*0.10;
+  g4.gain.setValueAtTime(fmVol,t+attackT*0.3);
+  g4.gain.exponentialRampToValueAtTime(0.001,t+holdTime*0.55);
+
+  // -- LAYER 5: Neural waveshaper -- saturation amount is inferred -------
+  const satCurve=new Float32Array(512);
+  const sat=nn.satAmount*(1+chaos*0.8+windBoost*0.4);
+  const tanhSat=Math.tanh(sat)||1;
+  for(let i=0;i<512;i++){const x=i*2/512-1; satCurve[i]=Math.tanh(x*sat)/tanhSat;}
+  const shaper=ctx.createWaveShaper(); shaper.curve=satCurve;
+  // Double LPF to keep it truly sub
+  const lpf1=ctx.createBiquadFilter(); lpf1.type='lowpass'; lpf1.frequency.value=110+windBoost*20; lpf1.Q.value=0.5;
+  const lpf2=ctx.createBiquadFilter(); lpf2.type='lowpass'; lpf2.frequency.value=110+windBoost*20; lpf2.Q.value=0.5;
+
+  // -- MIX all layers through shaper -> lpfs -> dest ---------------------
+  const mix=ctx.createGain(); mix.gain.value=1.0;
+  osc1.connect(g1); g1.connect(mix);
+  osc2.connect(g2); g2.connect(mix);
+  osc3.connect(g3); g3.connect(mix);
+  fmCarrier.connect(g4); g4.connect(mix);
+  mix.connect(shaper); shaper.connect(lpf1); lpf1.connect(lpf2); lpf2.connect(dest);
+
+  const stopT=t+holdTime+0.08;
+  [osc1,osc2,osc3,fmMod,fmCarrier].forEach(o=>{o.start(t);o.stop(stopT);});
+}
+
+// -- NEURAL BASS ENGINE --------------------------------------------------------
+// Midrange bass (60-600Hz) with neural filter envelope shaping.
+// Winding number history determines attack character, resonance, and envelope.
+// 4 synthesis modes selected by neural inference: pluck, slap, sustain, growl.
+
+function synthBass(ctx, t, note, chaos, warp, windBoost=0, inputChar=0.5, beat=0){
+  const dest=bus.getInput('bass'); if(!dest)return;
+  const freq=440*Math.pow(2,(note-69)/12)*warp;
+  const s=drumSeed();
+  const pc=((note%12)+12)%12; const pcMod=pc/12;
+
+  // Neural inputs -- same brain as sub, different inference
+  const inputs=bassBrain.update(windBoost*10, chaos, pcMod, beat);
+  const nn=bassBrain.infer(inputs);
+
+  // Select synthesis mode from neural output + chaos
+  // 0=pluck 1=slap 2=sustain 3=growl
+  const modeVal=(nn.harmonicMix + chaos*0.3 + windBoost*0.2 + pcMod*0.15) % 1.0;
+  const mode=modeVal<0.28?'pluck':modeVal<0.52?'slap':modeVal<0.76?'sustain':'growl';
+
+  const decayTime={pluck:0.22,slap:0.18,sustain:0.55,growl:0.40}[mode]/warp;
+  const bodyType={pluck:'triangle',slap:'square',sustain:'sawtooth',growl:'sawtooth'}[mode];
+
+  // -- BODY OSCILLATOR ---------------------------------------------------
+  const body=ctx.createOscillator(); body.type=bodyType;
+  body.frequency.value=freq*(1+s.color*0.004);
+  body.detune.value=(pcMod*8-4)+(s.color*5-2.5);
+
+  // -- RESONANT FILTER: neural cutoff + mode-specific envelope ----------
+  const flt=ctx.createBiquadFilter(); flt.type='lowpass';
+  const baseQ={pluck:4.5,slap:6.0,sustain:2.5,growl:8.0}[mode];
+  flt.Q.value=baseQ+chaos*8+nn.filterCutoff*5+s.punch*3;
+
+  // Filter envelope: each mode has distinct shape
+  const fOpen={pluck:800,slap:2200,sustain:600,growl:1400}[mode];
+  const fClose={pluck:80,slap:120,sustain:180,growl:60}[mode];
+  flt.frequency.setValueAtTime((fOpen+windBoost*400+inputChar*600+chaos*1200+pcMod*300)*warp, t);
+  flt.frequency.exponentialRampToValueAtTime((fClose+pcMod*30)*warp, t+decayTime);
+
+  // -- GAIN ENVELOPE -----------------------------------------------------
+  const attackT={pluck:0.003,slap:0.001,sustain:0.020,growl:0.008}[mode];
+  const g=ctx.createGain();
+  g.gain.setValueAtTime(0,t);
+  g.gain.linearRampToValueAtTime(0.80+windBoost*0.12+pcMod*0.05, t+attackT);
+  g.gain.exponentialRampToValueAtTime(0.001, t+decayTime+0.05);
+
+  // -- GROWL MODE: FM ring mod layer ------------------------------------
+  if(mode==='growl'){
+    const ring=ctx.createOscillator(); ring.type='sine';
+    ring.frequency.value=freq*(1.5+chaos*0.5+nn.subFreqMod*3);
+    const rg=ctx.createGain(); rg.gain.value=freq*(0.08+chaos*0.18+windBoost*0.10);
+    ring.connect(rg); rg.connect(body.frequency);
+    ring.start(t); ring.stop(t+decayTime+0.05);
+  }
+
+  // -- SLAP MODE: transient click layer ---------------------------------
+  if(mode==='slap'){
+    const click=ctx.createOscillator(); click.type='square';
+    click.frequency.setValueAtTime(freq*4,t);
+    click.frequency.exponentialRampToValueAtTime(freq,t+0.02/warp);
+    const cg=ctx.createGain();
+    cg.gain.setValueAtTime(s.punch*0.55,t);
+    cg.gain.exponentialRampToValueAtTime(0.001,t+0.025/warp);
+    click.connect(cg); cg.connect(dest);
+    click.start(t); click.stop(t+0.03/warp);
+  }
+
+  // -- PRESENCE HARMONIC: overtone for articulation ----------------------
+  const pres=ctx.createOscillator(); pres.type='sine';
+  pres.frequency.value=freq*(2+nn.harmonicMix*0.5);
+  const pg=ctx.createGain();
+  pg.gain.setValueAtTime((s.color*0.12+nn.filterCutoff*0.06),t);
+  pg.gain.exponentialRampToValueAtTime(0.001,t+0.14/warp);
+  pres.connect(pg); pg.connect(dest);
+  pres.start(t); pres.stop(t+0.18/warp);
+
+  body.connect(flt); flt.connect(g); g.connect(dest);
+  body.start(t); body.stop(t+decayTime+0.08);
+}
+
+function synthMid(ctx,t,notes,chordType,chaos,warp,dest,windBoost=0){
+  const ct=CHORDS[chordType]||CHORDS.maj;
+  const fmR=ct.fm+(chaos*0.10-0.05);
+  notes.slice(0,5).forEach((note,idx)=>{
+    const freq=440*Math.pow(2,(note-69)/12)*warp;
+    const car=ctx.createOscillator();const mod=ctx.createOscillator();
+    const mG=ctx.createGain();const flt=ctx.createBiquadFilter();const g=ctx.createGain();
+    car.type='sine';mod.type='sine';
+    car.frequency.value=freq;mod.frequency.value=freq*fmR;
+    mG.gain.value=freq*(0.22+chaos*0.5+windBoost*0.15);
+    mod.connect(mG);mG.connect(car.frequency);
+    flt.type='lowpass';flt.frequency.value=2000+chaos*3000;flt.Q.value=0.75;
+    const vol=(0.13+windBoost*0.03)/Math.max(1,notes.length*0.7);
+    g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vol,t+0.045/warp);
+    g.gain.exponentialRampToValueAtTime(0.001,t+(1.25+idx*0.07)/warp);
+    car.connect(flt);flt.connect(g);g.connect(dest);
+    mod.start(t);car.start(t);mod.stop(t+(1.4+idx*0.07)/warp);car.stop(t+(1.4+idx*0.07)/warp);
+  });
+}
+
+// Supersaw lead with portamento
+function synthLead(ctx,t,note,chaos,warp,dest,windBoost=0){
+  const freq=440*Math.pow(2,(note-69)/12)*warp;
+  const from=440*Math.pow(2,((note-7)-69)/12)*warp;
+  const master=ctx.createGain();
+  const flt=ctx.createBiquadFilter();flt.type='lowpass';
+  flt.frequency.setValueAtTime((1600+chaos*4200)*warp,t);
+  flt.frequency.exponentialRampToValueAtTime(700,t+0.35/warp);
+  flt.Q.value=1.6+chaos*3.5;
+  master.connect(flt);flt.connect(dest);
+  [-7,0,7].forEach(det=>{
+    const o=ctx.createOscillator();o.type='sawtooth';o.detune.value=det;
+    o.frequency.setValueAtTime(from,t);o.frequency.exponentialRampToValueAtTime(freq,t+0.07/warp);
+    o.connect(master);o.start(t);o.stop(t+0.6/warp);
+  });
+  master.gain.setValueAtTime(0.10+windBoost*0.03,t);master.gain.exponentialRampToValueAtTime(0.001,t+0.58/warp);
+}
+
+// -- ONBOARDING FLOW -----------------------------------------------------------
+const GUIDE_STEPS=[
+  {id:'welcome',title:'Welcome to Live AI Band',
+   msg:'You play. The AI builds a full band around you in real time using deep learning. First -- what is your role?',
+   choices:['I sing / hum a melody','I play an instrument','I drum / tap rhythms','Just listen & explore']},
+  {id:'motif_tutorial',title:'Motif Tutorial -- Sing Your Phrase',
+   msg:'Here is how to teach the AI your musical idea:\n\n1. Tap START PHRASE\n2. Sing or hum any melody (3-8 notes)\n3. Tap END PHRASE when done\n\nThe AI will detect: key, turnarounds, chord inversions, time signature, and reharmonization options. Repeat for multiple phrases -- the band learns each one. You can also tap the pad in rhythm while singing to set your groove simultaneously.',
+   choices:['Open Mic + Start Tutorial']},
+  {id:'instrument',title:'Play your instrument',
+   msg:'Play near the mic. Use START PHRASE / END PHRASE buttons to mark your musical ideas. The AI classifies your range (bass/mid/lead) and fills all other roles. The neural bass brain evolves as you play.',
+   choices:['Open Mic & Start']},
+  {id:'drummer',title:'Tap your rhythm',
+   msg:'Tap the pad to set your groove. After 4+ taps the band locks in. Then use START/END PHRASE to hum a melody over it -- even a single phrase teaches the AI your harmonic world.',
+   choices:['Got it -- show me the Tap Pad']},
+  {id:'listen',title:'Pure listening mode',
+   msg:'The AI band improvises using deep learning sub bass, neural reharmonization, and phrase memory. The longer it runs the more complex and unique the output becomes.',
+   choices:['Start Band']},
+];
+
+// Improv tab state (shared, not per-render)
+const improvState={
+  phrases:[],        // completed phrases from motif tutorial
+  uploadedAudio:null,// ArrayBuffer of uploaded song
+  uploadedKey:null,
+  uploadedTempo:null,
+  midiNotes:[],      // queued MIDI notes from improv tab
+  activePhrase:null,
+};
+
+// -- MAIN APP -----------------------------------------------------------------
+function App(){
+  const[guideStep,setGuideStep]=useState('welcome');
+  const[guideVisible,setGuideVisible]=useState(true);
+  const[isPlaying,setIsPlaying]=useState(false);
+  const[lockedIn,setLockedIn]=useState(false);
+  const[chaos,setChaos]=useState(0.32);
+  const[density,setDensity]=useState(0.55);
+  const[swing,setSwing]=useState(20);
+  const[bpm,setBpm]=useState(110);
+  const[timeSignature,setTS]=useState(16);
+  const[recordScratch,setRS]=useState(0);
+  const[log,setLog]=useState(['[SYSTEM] Band ready. Complete setup to begin.']);
+  const[micActive,setMicActive]=useState(false);
+  const[detectedMidi,setDMidi]=useState(60);
+  const[confidence,setConf]=useState(0);
+  const[userRole,setUserRole]=useState('unknown');
+  const[detectedSwing,setDSwing]=useState(0);
+  const[subdivisions,setSubdivisions]=useState(2);
+  const[brainQ,setBrainQ]=useState(0);
+  const[tapCount,setTapCount]=useState(0);
+  const[tapPulse,setTapPulse]=useState(false);
+  const[tapPitchViz,setTapPitchViz]=useState([]);// visual dots for tap input
+  const[scaleMode,setScaleMode]=useState('major');
+  const[currentChord,setCChord]=useState('maj');
+  const[motifFlag,setMotifFlag]=useState(false);
+  const[keyChangeFlag,setKCFlag]=useState(false);
+  const[tempoChangeFlag,setTCFlag]=useState(false);
+  const[fxOn,setFxOn]=useState({reverb:false,delay:false,chorus:false});
+  // Section mutes -- each can be muted; state preserved when re-enabled
+  const[mutes,setMutes]=useState({drum:false,bass:false,sub:false,mid:false,lead:false});
+  const muteSamplesRef=useRef({drum:null,bass:null,sub:null,mid:null,lead:null});
+  const[hapticMode,setHapticMode]=useState('standard');
+  const[deafMode,setDeafMode]=useState(false);
+  const[collectiveMem,setCollMem]=useState([]);
+  const[voiceDisp,setVoiceDisp]=useState({drum:0,bass:0,mid:0,lead:0});
+  const[inputEnergy,setInputEnergy]=useState(0);
+  const[gainReduction,setGainReduction]=useState({master:0,drum:0,bass:0,sub:0});
+  // Improv tab state
+  const[activeTab,setActiveTab]=useState('band');  // 'band' | 'improv'
+  const[phraseRecording,setPhraseRecording]=useState(false);
+  const[completedPhrases,setCompletedPhrases]=useState([]);
+  const[lastPhrase,setLastPhrase]=useState(null);
+  const[uploadStatus,setUploadStatus]=useState('');
+  const[improvChord,setImprovChord]=useState('maj');
+  const[improvRoot,setImprovRoot]=useState(60);
+  const fileInputRef=useRef(null);
+  const[billboard,setBillboard]=useState([]); // top 10 user inputs
+  const[isRecording,setIsRecording]=useState(false);
+  const[recordingUrl,setRecordingUrl]=useState(null);
+  const mediaRecorderRef=useRef(null);
+  const recordChunksRef=useRef([]);
+  const[sim3Balls,setSim3Balls]=useState([]); // from genesis_brain sim3 namespace
+  const[sim3Chaos,setSim3Chaos]=useState(null); // top-level chaos_ratio from sim3
+
+  const canvasRef=useRef(null);
+  const tapCanvasRef=useRef(null);
+  const requestRef=useRef();
+  const tapAnimRef=useRef();
+  const isPlayRef=useRef(false);
+  const lockedRef=useRef(false);
+  const mutesRef=useRef({drum:false,bass:false,sub:false,mid:false,lead:false});
+  const pitchActRef=useRef(Array(12).fill(0));
+  const pitchHistRef=useRef(Array(12).fill(0));
+  const prevRootRef=useRef(60);
+  const energyRef=useRef(0);
+  const tapVizRef=useRef([]);
+  const midiRef=useRef(null);
+  const hapticModeRef=useRef('standard');
+  const deafModeRef=useRef(false);
+  const confidenceRef=useRef(0);
+
+  const voicesRef=useRef({
+    drum:new VoiceMemory('drum'),bass:new VoiceMemory('bass'),
+    mid:new VoiceMemory('mid'),lead:new VoiceMemory('lead'),
+  });
+
+  const AR=useRef({
+    ctx:null,nextNoteTime:0,current16thNote:0,
+    timerID:null,bpm:110,stepsPerMeasure:16,
+    chaos:0.32,density:0.55,swing:20,
+    rootMidi:60,warpMultiplier:1.0,
+    micStream:null,analyser:null,
+    lastOnset:0,previousEnergy:0,
+    tempoHistory:[],onsetTimes:[],
+    rhythmHistory:{},
+    userRole:'unknown',scale:SCALES.major,chordType:'maj',
+    lockedBpm:null,lockedSwing:null,lockedRoot:null,
+    tick:0,inputEnergy:0.5,
+  });
+
+  const addLog=msg=>setLog(p=>[`[${new Date().toLocaleTimeString()}] ${msg}`,...p].slice(0,14));
+
+  // -- SWARM -----------------------------------------------------------------
+  useEffect(()=>{
+    const go=async()=>{try{const{data}=await db.from('athematic_history').select('*').order('created_at',{ascending:false}).limit(150);if(data)setCollMem(data);}catch(e){}};
+    go();const iv=setInterval(go,20000);return()=>clearInterval(iv);
+  },[]);
+
+  // -- GENESIS BRAIN: listen for sim3 updates via WebSocket -----------------
+  useEffect(()=>{
+    // Load current sim3 state on mount
+    fetch(SB_URL+'/rest/v1/genesis_brain?select=*&namespace=eq.sim3',{headers:SB_UH})
+      .then(r=>r.json())
+      .then(rows=>{
+        if(Array.isArray(rows)&&rows.length>0){
+          const p=rows[0].payload;
+          if(p?.balls){setSim3Balls(p.balls);setSim3Chaos(p.chaos_ratio??null);}
+        }
+      }).catch(()=>{});
+    // Open WebSocket for real-time updates
+    const wsUrl=SB_URL.replace('https://','wss://')+`/realtime/v1/websocket?apikey=${SB_KEY}&vsn=1.0.0`;
+    const ws=new WebSocket(wsUrl);
+    let hb=null;
+    ws.onopen=()=>{
+      ws.send(JSON.stringify({topic:'realtime:public:genesis_brain',event:'phx_join',
+        payload:{config:{broadcast:{self:false},presence:{key:''},
+          postgres_changes:[{event:'*',schema:'public',table:'genesis_brain'}]}},ref:'band-1'}));
+      hb=setInterval(()=>{if(ws.readyState===1)ws.send(JSON.stringify({topic:'phoenix',event:'heartbeat',payload:{},ref:null}));},25000);
+    };
+    ws.onmessage=(e)=>{
+      try{
+        const msg=JSON.parse(e.data);
+        const rec=msg?.payload?.data?.record||msg?.payload?.data?.new||msg?.payload?.record;
+        if(rec?.namespace==='sim3'&&rec.payload?.balls){
+          setSim3Balls(rec.payload.balls);
+          setSim3Chaos(rec.payload.chaos_ratio??null);
+        }
+      }catch(_){}
+    };
+    ws.onerror=()=>ws.close();
+    return()=>{clearInterval(hb);ws.close();};
+  },[]);
+
+  // -- AUTO CHAOS + DISPLAY --------------------------------------------------
+  useEffect(()=>{
+    if(!isPlaying)return;
+    let t=0;
+    const iv=setInterval(()=>{
+      t+=0.04;
+      setChaos(p=>Math.min(1,Math.max(0.05,p+Math.sin(t)*0.007)));
+      setBrainQ(brain.quality);
+      const vd={};for(const[r,v]of Object.entries(voicesRef.current))vd[r]=Math.min(100,v.winding*5);
+      setVoiceDisp({...vd});
+      // Poll compression gain reduction for metering
+      setGainReduction(bus.getGainReduction());
+    },160);
+    return()=>clearInterval(iv);
+  },[isPlaying]);
+
+  // -- SYNC REFS -------------------------------------------------------------
+  useEffect(()=>{AR.current.chaos=chaos;AR.current.density=density;AR.current.swing=swing;AR.current.bpm=bpm;AR.current.warpMultiplier=Math.pow(2,recordScratch/100);bus.updateDelayTime(bpm);},[chaos,density,swing,bpm,recordScratch]);
+  useEffect(()=>{AR.current.userRole=userRole;},[userRole]);
+  useEffect(()=>{isPlayRef.current=isPlaying;},[isPlaying]);
+  useEffect(()=>{lockedRef.current=lockedIn;},[lockedIn]);
+  useEffect(()=>{mutesRef.current=mutes;},[mutes]);
+  useEffect(()=>{hapticModeRef.current=hapticMode;},[hapticMode]);
+  useEffect(()=>{deafModeRef.current=deafMode;},[deafMode]);
+
+  // -- WEB MIDI SETUP --------------------------------------------------------
+  useEffect(()=>{
+    if(!navigator.requestMIDIAccess)return;
+    navigator.requestMIDIAccess().then(access=>{
+      midiRef.current=access;
+      access.inputs.forEach(input=>{
+        input.onmidimessage=e=>{
+          const[status,note,velocity]=e.data;
+          if((status&0xf0)===0x90&&velocity>0){
+            // Note on -> treat as pitch input
+            AR.current.rootMidi=note;
+            setDMidi(note);
+            motifEng.addPitch(note,Date.now());
+            pitchHistRef.current[note%12]+=0.2;
+            // Visual tap on tap canvas
+            tapVizRef.current.push({x:Math.random(),y:Math.random(),t:Date.now(),intensity:velocity/127,midi:note});
+            hap.tap();
+            if(!isPlayRef.current)startBand();
+          }
+        };
+      });
+      addLog('MIDI connected.');
+    }).catch(()=>{});
+  },[]);
+
+  // -- ROLE CLASSIFICATION ---------------------------------------------------
+  const classifyRole=(freq,rms,pitchConf,onsetRate)=>{
+    if(pitchConf<25&&onsetRate>2.5)return'drum';
+    if(freq>0&&freq<180)return'bass';
+    if(freq>=180&&freq<900)return'mid';
+    if(freq>=900)return'lead';
+    return'unknown';
+  };
+
+  // -- LOCK IN ---------------------------------------------------------------
+  const handleLockIn=()=>{
+    const ar=AR.current;
+    if(!lockedIn){
+      ar.lockedBpm=ar.bpm;ar.lockedSwing=ar.swing;ar.lockedRoot=ar.rootMidi;
+      setLockedIn(true);
+      addLog(`[lock] LOCKED: ${ar.bpm}BPM . ${ar.swing}% swing . ${midiToNote(ar.rootMidi)} -- Stop mic for highest quality.`);
+      hap.lockIn();
+    }else{
+      ar.lockedBpm=null;ar.lockedSwing=null;ar.lockedRoot=null;
+      setLockedIn(false);addLog('[unlock] Unlocked.');hap.tap();
+    }
+  };
+
+  // -- MIC -------------------------------------------------------------------
+  const toggleMic=async()=>{
+    if(micActive){
+      if(AR.current.micStream)AR.current.micStream.getTracks().forEach(t=>t.stop());
+      AR.current.analyser=null;setMicActive(false);setConf(0);setUserRole('unknown');
+      if(lockedIn)addLog('Mic off . Hands-free mode active.');
+      else addLog('Mic off.');return;
+    }
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+      if(!AR.current.ctx)AR.current.ctx=new(window.AudioContext||window.webkitAudioContext)();
+      if(AR.current.ctx.state==='suspended')await AR.current.ctx.resume();
+      bus.init(AR.current.ctx);
+      const src=AR.current.ctx.createMediaStreamSource(stream);
+      const an=AR.current.ctx.createAnalyser();an.fftSize=8192;an.smoothingTimeConstant=0.76;
+      src.connect(an);AR.current.micStream=stream;AR.current.analyser=an;
+      setMicActive(true);
+      addLog('Listening. Play -- AI builds band around you. Lock In then stop mic for best quality.');
+    }catch(e){addLog('Mic access denied.');}
+  };
+
+  // -- SECTION MUTE ----------------------------------------------------------
+  const toggleMute=role=>{
+    setMutes(prev=>{
+      const next={...prev,[role]:!prev[role]};
+      if(!prev[role])addLog(`${role.toUpperCase()} muted. Pattern saved.`);
+      else addLog(`${role.toUpperCase()} back in.`);
+      hap.mute();
+      return next;
+    });
+  };
+
+  // -- REHARM ----------------------------------------------------------------
+  const reharm=type=>{
+    AR.current.chordType=type;setCChord(type);
+    const label=CHORDS[type]?.label||type;
+    addLog(`Reharm -> ${label}`);
+    hap.chordQuality(type);
+  };
+
+  // -- RESTART BAND ----------------------------------------------------------
+  const restartBand=()=>{
+    if(!isPlaying)return;
+    clearTimeout(AR.current.timerID);
+    AR.current.current16thNote=0;AR.current.rhythmHistory={};
+    AR.current.nextNoteTime=AR.current.ctx.currentTime+0.05;
+    scheduler();
+    addLog('Band restarted. Locked state preserved.');
+    hap.restart();
+  };
+  // -- IN-APP RECORDING ----------------------------------------------------------
+  const toggleRecording=async()=>{
+    unlockHaptics();
+    if(isRecording){
+      if(mediaRecorderRef.current)mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      return;
+    }
+    try{
+      const ar=AR.current;
+      if(!ar.ctx){addLog('Start band first to record');return;}
+      const dest=ar.ctx.createMediaStreamDestination();
+      if(bus&&bus.master)bus.master.connect(dest);
+      const mr=new MediaRecorder(dest.stream,{mimeType:'audio/webm;codecs=opus'});
+      recordChunksRef.current=[];
+      mr.ondataavailable=function(e){if(e.data.size>0)recordChunksRef.current.push(e.data);};
+      mr.onstop=function(){
+        const blob=new Blob(recordChunksRef.current,{type:'audio/webm'});
+        const url=URL.createObjectURL(blob);
+        setRecordingUrl(url);
+        addLog('Recording saved -- tap Download to save');
+      };
+      mr.start(100);
+      mediaRecorderRef.current=mr;
+      setIsRecording(true);
+      addLog('Recording started...');
+    }catch(err){addLog('Recording error: '+err.message);}
+  };
+
+  // -- PHRASE RECORDING -------------------------------------------------------
+  const startPhrase=()=>{
+    motifEng.startPhrase();
+    setPhraseRecording(true);
+    addLog('[REC] Phrase started -- sing your motif now');
+    hap.tap();
+  };
+
+  const endPhrase=()=>{
+    const result=motifEng.endPhrase();
+    setPhraseRecording(false);
+    if(!result){addLog('[REC] Too short -- sing at least 3 notes');return;}
+    setLastPhrase(result);
+    setCompletedPhrases(p=>[result,...p].slice(0,8));
+    improvState.phrases.push(result);
+    // Apply detected time sig to scheduler
+    const ts=motifEng.dominantTimeSig();
+    if(ts>=2&&ts<=9){
+      AR.current.stepsPerMeasure=ts*4;
+      setTS(ts*4);
+    }
+    // Apply reharmonization suggestion
+    if(result.reharmonSuggestion){
+      AR.current.chordType=result.reharmonSuggestion;
+      setCChord(result.reharmonSuggestion);
+    }
+    // Billboard entry
+    setBillboard(prev=>{
+      const entry={
+        rank:prev.length+1,
+        key:NOTE_NAMES[result.root],
+        chord:result.reharmonSuggestion,
+        timeSig:result.timeSig,
+        hasTA:result.hasTA,
+        t:new Date().toLocaleTimeString(),
+        ivs:result.ivs.slice(0,4).map(function(v){return v>0?'+'+v:String(v);}).join(' ')
+      };
+      return [entry,...prev].slice(0,10);
+    });
+    addLog(`[REC] Phrase done: key=${NOTE_NAMES[result.root]} chord=${result.reharmonSuggestion} time=${result.timeSig}/4${result.hasTA?' TURNAROUND':''} inv=${result.inversion}`);
+    // Save phrase to Supabase for memory
+    try{fetch(SB_URL+'/rest/v1/genesis_brain',{method:'POST',headers:SB_UH,
+      body:JSON.stringify({namespace:'phrases',version:Date.now(),
+        payload:{root:result.root,ivs:result.ivs,timeSig:result.timeSig,
+          reharmonSuggestion:result.reharmonSuggestion,hasTA:result.hasTA,
+          inversion:result.inversion,_ts:Date.now()}})});}catch(e){}
+    hap.motif();
+    if(!isPlayRef.current)startBand();
+  };
+
+  // -- SONG UPLOAD ------------------------------------------------------------
+  const handleUpload=async(e)=>{
+    const file=e.target.files[0]; if(!file)return;
+    setUploadStatus('Analyzing...');
+    try{
+      if(!AR.current.ctx)AR.current.ctx=new(window.AudioContext||window.webkitAudioContext)();
+      if(AR.current.ctx.state==='suspended')await AR.current.ctx.resume();
+      const ab=await file.arrayBuffer();
+      const audio=await AR.current.ctx.decodeAudioData(ab);
+      // Analyze: extract tempo via onset detection on downmixed buffer
+      const ch=audio.getChannelData(0);
+      const sr=audio.sampleRate;
+      const hop=Math.floor(sr*0.01); // 10ms hop
+      const onsets=[];
+      let prev=0;
+      for(let i=0;i<ch.length-hop;i+=hop){
+        let rms=0;for(let j=0;j<hop;j++)rms+=ch[i+j]*ch[i+j];
+        rms=Math.sqrt(rms/hop);
+        if(rms>prev*1.5&&rms>0.02&&(onsets.length===0||i/sr-onsets[onsets.length-1]>0.15))
+          onsets.push(i/sr);
+        prev=rms*0.85+prev*0.15;
+      }
+      // Estimate tempo from onset intervals
+      let detectedBpm=120;
+      if(onsets.length>4){
+        const gaps=onsets.slice(1).map((ot,oi)=>ot-onsets[oi]);
+        const med=gaps.sort((a,b)=>a-b)[Math.floor(gaps.length/2)];
+        detectedBpm=Math.round(60/med);
+        if(detectedBpm<40)detectedBpm*=2;
+        if(detectedBpm>200)detectedBpm=Math.round(detectedBpm/2);
+        detectedBpm=Math.max(60,Math.min(200,detectedBpm));
+      }
+      // Estimate key from spectral centroid per chroma bin (simplified)
+      const fftSize=2048;
+      const chroma=new Array(12).fill(0);
+      for(let i=0;i<Math.min(ch.length,sr*10);i+=fftSize){
+        const slice=ch.slice(i,i+fftSize);
+        for(let j=0;j<slice.length;j++){
+          if(Math.abs(slice[j])>0.01){
+            const pitchEst=Math.round(69+12*Math.log2(Math.max(0.001,Math.abs(slice[j]))*440/0.02));
+            chroma[((pitchEst%12)+12)%12]+=Math.abs(slice[j]);
+          }
+        }
+      }
+      const detectedRoot=chroma.indexOf(Math.max(...chroma));
+      improvState.uploadedKey=detectedRoot;
+      improvState.uploadedTempo=detectedBpm;
+      AR.current.rootMidi=60+detectedRoot;
+      AR.current.bpm=detectedBpm;
+      setBpm(detectedBpm);
+      setDMidi(60+detectedRoot);
+      addLog(`Song analyzed: ${NOTE_NAMES[detectedRoot]} @ ${detectedBpm}BPM -- band locked to song`);
+      setUploadStatus(`${NOTE_NAMES[detectedRoot]} @ ${detectedBpm}BPM`);
+      if(!isPlayRef.current)startBand();
+    }catch(err){
+      setUploadStatus('Error: '+err.message);
+      addLog('Upload failed: '+err.message);
+    }
+  };
+
+  // -- HAPTIC MODES ----------------------------------------------------------
+  const hapticModeDescriptions={
+    standard:'Light tap per hit',
+    bass:'Long deep pulse on every beat (best for deaf users)',
+    rhythm:'Full rhythm pattern vibrated each measure',
+    chord:'Chord quality encoded in vibration pattern',
+  };
+
+  // -- TAP PAD ---------------------------------------------------------------
+  const tapRef=useRef({times:[],lastTap:0});
+  const handleTap=useCallback(async(e,x,y)=>{
+    e.preventDefault();
+    if(hapticModeRef.current==='bass')hap.subBass(AR.current.bpm);
+    else hap.tap();
+
+    setTapPulse(true);setTimeout(()=>setTapPulse(false),260);
+
+    if(!AR.current.ctx)AR.current.ctx=new(window.AudioContext||window.webkitAudioContext)();
+    if(AR.current.ctx.state==='suspended')await AR.current.ctx.resume();
+    bus.init(AR.current.ctx);
+
+    const now=Date.now();const tap=tapRef.current;
+    if(now-tap.lastTap>3000)tap.times=[];
+    tap.times.push(now);tap.lastTap=now;setTapCount(tap.times.length);
+
+    // Visual tap dot on tap canvas
+    const rect=e.currentTarget?.getBoundingClientRect?.();
+    const tx=rect?(e.clientX-rect.left)/rect.width:0.5;
+    const ty=rect?(e.clientY-rect.top)/rect.height:0.5;
+    tapVizRef.current.push({x:tx,y:ty,t:now,intensity:1});
+    // Also register as input energy for hands-free detection
+    AR.current.inputEnergy=1.0;
+    setInputEnergy(1.0);setTimeout(()=>{AR.current.inputEnergy=0;setInputEnergy(0);},200);
+
+    if(tap.times.length>=4){
+      const result=motifEng.addOnset(now);
+      if(result){
+        const{bpm:tb,swingPct,subdivisions:sub}=result;
+        if(tb>=30&&tb<=280){
+          setBpm(tb);AR.current.bpm=tb;
+          if(Math.abs(tb-bpm)>6){setTCFlag(true);setTimeout(()=>setTCFlag(false),1500);}
+        }
+        if(swingPct>0){setSwing(swingPct);AR.current.swing=swingPct;setDSwing(swingPct);}
+        setSubdivisions(sub||2);
+        const subLabel={1:'whole',2:'8th',3:'triplet/jazz',4:'16th',5:'quintuplet',6:'sextuplet',7:'septuplet'};
+        if(sub>2)addLog(`Rhythm: ${subLabel[sub]||sub+'-tuplet'} feel`);
+      }
+    }else{
+      motifEng.addOnset(now); // always register onset, result only used after 4+
+    }
+
+    if(!isPlayRef.current)startBand();
+  },[bpm]);
+
+  // -- START / STOP ----------------------------------------------------------
+  const startBand=async()=>{
+    if(isPlayRef.current)return; // guard against double-start
+    if(!AR.current.ctx)AR.current.ctx=new(window.AudioContext||window.webkitAudioContext)();
+    if(AR.current.ctx.state==='suspended')await AR.current.ctx.resume();
+    bus.init(AR.current.ctx);
+    setIsPlaying(true);isPlayRef.current=true;
+    AR.current.nextNoteTime=AR.current.ctx.currentTime+0.08;
+    scheduler();hap.tap();
+    addLog('Band active.');
+  };
+
+  const togglePlay=async()=>{
+    if(!AR.current.ctx)AR.current.ctx=new(window.AudioContext||window.webkitAudioContext)();
+    if(AR.current.ctx.state==='suspended')await AR.current.ctx.resume();
+    bus.init(AR.current.ctx);
+    if(isPlaying){
+      clearTimeout(AR.current.timerID);
+      setIsPlaying(false);isPlayRef.current=false;
+      try{await db.from('athematic_history').insert([{chaos,density,swing,bpm,timeSignature,rootMidi:AR.current.rootMidi}]);}catch(e){}
+      hap.restart();
+    }else{await startBand();}
+  };
+
+  // -- SCHEDULE NOTE ---------------------------------------------------------
+  const scheduleNote=(beat,time)=>{
+    const ar=AR.current;const voices=voicesRef.current;
+    const{ctx,chaos,density,stepsPerMeasure,warpMultiplier,userRole,chordType}=ar;
+    const rootMidi=ar.lockedRoot??ar.rootMidi;
+    const mutes=mutesRef.current;
+    const ie=ar.inputEnergy||0.5;
+    const tick=ar.tick++;
+    Object.values(voices).forEach(v=>v.tick());
+
+    if(beat===0){
+      brain.auto(userRole,[0,4,7,11],chaos);
+      if(Math.random()<chaos*0.2){
+        const ms=[12,14,16,20];const m=ms[Math.floor(Math.random()*ms.length)];
+        ar.stepsPerMeasure=m;setTS(m);
+      }
+      // Rhythm haptic mode -- vibrate the full beat pattern
+      if(hapticModeRef.current==='rhythm'){
+        const spb=Math.round(60000/(ar.lockedBpm||ar.bpm));
+        hap.rhythm([spb,spb,spb,spb]);
+      }
+      // Echo motif -- fifth echo
+      const echoResult=motifEng.popEcho();
+      if(echoResult&&userRole!=='lead'&&!mutes.lead){
+        echoResult.ivs.forEach(function(iv,ei){
+          const echoNote=echoResult.root+iv+echoResult.transpose;
+          if(echoNote>=24&&echoNote<=96){
+            const eT=time+(ei*(60/(ar.bpm*4)));
+            synthLead(ctx,eT,echoNote,chaos*0.45,warpMultiplier,bus.getInput('lead'),0.2);
+          }
+        });
+        setMotifFlag(true);setTimeout(function(){setMotifFlag(false);},1100);hap.motif();
+      }
+      // -- PUBLISH TO GENESIS BRAIN every measure -------------------------
+      // All sims receive this via realtime WS push -- no polling
+      gbWrite({
+        bpm:       ar.lockedBpm||ar.bpm,
+        beat_phase:beat,
+        root_midi: rootMidi,
+        chord_type:chordType,
+        chaos,
+        density,
+        swing:     ar.lockedSwing||ar.swing,
+        steps:     stepsPerMeasure,
+        warp:      warpMultiplier,
+        user_role: userRole,
+        winding_drum: voices.drum?.winding||0,
+        winding_bass: voices.bass?.winding||0,
+        winding_mid:  voices.mid?.winding||0,
+        winding_lead: voices.lead?.winding||0,
+        sub_active:  !mutes.sub,
+        bass_active: !mutes.bass,
+        invRadius:   Math.round(60 + (ar.lockedBpm||ar.bpm) * 0.5), // radius hint for sims
+      });
+    }
+
+    const bk=beat%stepsPerMeasure;
+    const hist=ar.rhythmHistory[bk]||{k:false,s:false,h:false,b:false,m:false,l:false};
+    const bb=Math.floor(stepsPerMeasure/2);
+    const sup={drum:userRole==='drum',bass:userRole==='bass',mid:userRole==='mid',lead:userRole==='lead'};
+
+    // -- DRUMS -------------------------------------------------------------
+    if(!sup.drum&&!mutes.drum){
+      const playK=beat===0?true:Math.random()<chaos*0.28*(hist.k?0.05:2.2);
+      const playS=(beat===bb||beat===bb+4)?true:Math.random()<chaos*0.18*(hist.s?0.04:2.1);
+      const playH=Math.random()<density*0.88*(hist.h?0.55:1.4);
+      const openH=Math.random()<chaos*0.09;
+      if(playK){synthKick(ctx,time,warpMultiplier,bus.getInput('drum'),ie);voices.drum.play();
+        if(hapticModeRef.current==='bass'||deafModeRef.current)hap.kick();else hap.tap();}
+      if(playS){synthSnare(ctx,time,chaos,warpMultiplier,bus.getInput('drum'),1-ie);voices.drum.play();
+        if(hapticModeRef.current==='rhythm')hap.snare();}
+      if(playH){synthHat(ctx,time,openH,chaos,warpMultiplier,bus.getInput('drum'),ie);}
+    }
+
+    // -- EXCLUSION PRINCIPLE -----------------------------------------------
+    const ct=CHORDS[chordType]||CHORDS.maj;
+    const bassAsserts=voices.bass.winding>voices.mid.winding;
+    const bassOpts=sup.bass||mutes.bass?[]:[0,7,5,ct.iv[1]||4];
+    const midOpts =sup.mid ||mutes.mid ?[]:(bassAsserts?ct.iv.slice(2).map(v=>v+12):ct.iv);
+    const leadOpts=sup.lead||mutes.lead?[]:[12,14,(ct.iv[1]||4)+12,(ct.iv[2]||7)+12,19];
+
+    // -- SUB BASS + BASS -- alternating, never simultaneous -----------------
+    // Sub owns downbeat (beat 0) and the half-note (beat 8 in 4/4).
+    // Bass fills offbeats and syncopations. They share winding memory.
+    if(!sup.bass&&!mutes.bass&&bassOpts.length){
+      const iv=brain.choose(userRole,bassOpts,chaos);
+      const baseNote=rootMidi+iv-12;
+
+      // Sub bass: plays on beat 0 and beat bb (half note positions)
+      const isSubBeat=(beat===0||(beat===bb&&Math.random()<0.75));
+      if(isSubBeat&&!mutes.sub){
+        synthSubBass(ctx,time,baseNote,chaos,warpMultiplier,voices.bass.winding*0.08,beat);
+        voices.bass.play();voices.bass.lastNote=baseNote;
+        if(deafModeRef.current||hapticModeRef.current==='bass')hap.subBass(ar.lockedBpm||ar.bpm);
+      }
+
+      // Bass: plays on offbeats -- never beat 0, never beat bb (those belong to sub)
+      const isBassBeat=beat!==0&&beat!==bb&&(beat===Math.floor(bb/2)||beat===Math.floor(bb*1.5)||Math.random()<density*0.55*(hist.b?0.08:1.5));
+      if(isBassBeat){
+        synthBass(ctx,time,baseNote,chaos,warpMultiplier,voices.bass.winding*0.08,ie,beat);
+        voices.bass.play();voices.bass.lastNote=baseNote;
+        if(deafModeRef.current||hapticModeRef.current==='bass')hap.kick();
+      }
+    }
+
+    // -- MID ---------------------------------------------------------------
+    if(!sup.mid&&!mutes.mid&&midOpts.length){
+      const prob=beat===0?1:chaos*0.55*(hist.m?0.08:1.9);
+      if(Math.random()<prob){
+        const notes=chaos>0.72?[rootMidi,rootMidi+5,rootMidi+10]:ct.iv.map(v=>rootMidi+v);
+        synthMid(ctx,time,notes,chordType,chaos,warpMultiplier,bus.getInput('mid'),voices.mid.winding*0.07);
+        voices.mid.play();
+        if(hapticModeRef.current==='chord')hap.chordQuality(chordType);
+      }
+    }
+
+    // -- LEAD -------------------------------------------------------------
+    if(!sup.lead&&!mutes.lead&&leadOpts.length){
+      const prob=density*(hist.l?0.14:1.6)*0.65;
+      if(Math.random()<prob){
+        const iv=brain.choose(userRole,leadOpts,chaos);
+        synthLead(ctx,time,rootMidi+iv,chaos,warpMultiplier,bus.getInput('lead'),voices.lead.winding*0.07);
+        voices.lead.play();voices.lead.lastNote=rootMidi+iv;
+      }
+    }
+
+    ar.rhythmHistory[bk]={k:!sup.drum,s:!sup.drum,h:!sup.drum,b:!sup.bass,m:!sup.mid,l:!sup.lead};
+  };
+
+  const scheduler=()=>{
+    const ar=AR.current;
+    while(ar.nextNoteTime<ar.ctx.currentTime+0.1){
+      const beat=ar.current16thNote;
+      const spb=60.0/((ar.lockedBpm||ar.bpm)*ar.warpMultiplier);
+      let time=ar.nextNoteTime;
+      const sw=ar.lockedSwing??ar.swing;
+      if(beat%2===1)time+=(sw/100)*(0.25*spb)*0.5;
+      scheduleNote(beat,time);
+      ar.nextNoteTime+=0.25*spb;ar.current16thNote=(beat+1)%ar.stepsPerMeasure;
+    }
+    ar.timerID=setTimeout(scheduler,18);
+  };
+
+  // -- CANVAS: Munker-White + waveform + orbs --------------------------------
+  useEffect(()=>{
+    let frame=0,onsetRate=0;
+    const renderLoop=()=>{
+      frame++;
+      const canvas=canvasRef.current;
+      if(!canvas){requestRef.current=requestAnimationFrame(renderLoop);return;}
+      const c=canvas.getContext('2d');
+      const W=canvas.width,H=canvas.height,cy=H/2;
+
+      const sOff=(Date.now()*0.048)%(5*2);
+      c.fillStyle='rgb(115,115,115)';c.fillRect(0,0,W,H);
+
+      const userPc=((AR.current.lockedRoot??AR.current.rootMidi)%12+12)%12;
+      const uc=PC[userPc];
+      let aiPc=userPc,maxW=0;
+      for(const v of Object.values(voicesRef.current)){if(v.winding>maxW&&v.lastNote!==null){maxW=v.winding;aiPc=((v.lastNote%12)+12)%12;}}
+      const ac=PC[aiPc];
+      const pulse=(Math.sin(Date.now()*.004)+1)/2;
+      const uAct=pitchActRef.current[userPc]||0;
+      const aiAct=(voicesRef.current.lead.glow+voicesRef.current.mid.glow)*0.4;
+
+      const bM=W*.06,bW=W*.38,bH=H*.65+uAct*25,bY=cy-bH/2;
+      const aH=H*.65+aiAct*25,aY=cy-aH/2;
+
+      c.shadowBlur=16+pulse*12+uAct*14;c.shadowColor=`rgb(${uc[0]},${uc[1]},${uc[2]})`;
+      c.fillStyle=`rgb(${uc[0]},${uc[1]},${uc[2]})`;c.fillRect(bM,bY,bW,bH);
+      c.shadowColor=`rgb(${ac[0]},${ac[1]},${ac[2]})`;c.fillStyle=`rgb(${ac[0]},${ac[1]},${ac[2]})`;
+      c.fillRect(W-bM-bW,aY,bW,aH);c.shadowBlur=0;
+
+      // Moving stripes
+      c.save();c.beginPath();c.rect(0,0,W/2,H);c.clip();
+      for(let sy=-10+sOff;sy<H+10;sy+=10){c.fillStyle='rgba(255,255,255,0.87)';c.fillRect(0,sy,W/2,5);}
+      c.restore();
+      c.save();c.beginPath();c.rect(W/2,0,W/2,H);c.clip();
+      for(let sy=-10+sOff;sy<H+10;sy+=10){c.fillStyle='rgba(0,0,0,0.87)';c.fillRect(W/2,sy,W/2,5);}
+      c.restore();
+
+      // User waveform
+      const wX=bM+6,wW=W/2-6-wX;
+      if(micActive&&AR.current.analyser){
+        const td=new Uint8Array(AR.current.analyser.fftSize);
+        AR.current.analyser.getByteTimeDomainData(td);
+        c.save();c.beginPath();c.rect(wX,bY+4,bW-8,bH-8);c.clip();
+        c.strokeStyle='rgba(255,255,255,0.92)';c.lineWidth=2;c.shadowBlur=5;c.shadowColor='#fff';
+        c.beginPath();const step=Math.ceil(td.length/wW);
+        for(let i=0;i<wW;i++){const s=(td[i*step]/128.0)-1.0;const x=wX+i,y=cy+s*(bH*.36);i===0?c.moveTo(x,y):c.lineTo(x,y);}
+        c.stroke();c.shadowBlur=0;c.restore();
+      }else{
+        c.save();c.beginPath();c.rect(wX,bY+4,bW-8,bH-8);c.clip();
+        c.strokeStyle='rgba(255,255,255,0.22)';c.lineWidth=1.5;c.beginPath();
+        c.beginPath();for(let i=0;i<wW;i++){const t2=(i/wW)*Math.PI*5+Date.now()*.0012;const x=wX+i,y=cy+Math.sin(t2)*(bH*.09);i===0?c.moveTo(x,y):c.lineTo(x,y);}
+        c.stroke();c.restore();
+      }
+
+      // AI orbs
+      const aiCx=W*.75,aiCy=cy;
+      Object.values(voicesRef.current).forEach((v,idx)=>{
+        const isMuted=mutesRef.current[v.role];
+        if(isMuted){c.save();c.globalAlpha=0.2;}
+        const oR=24+idx*20+v.winding*1.8;
+        v.x=aiCx+Math.cos(v.angle)*oR;v.y=aiCy+Math.sin(v.angle)*oR;
+        const[r,g,b2]=v.col;const size=5+v.winding*1.0+v.glow*7;
+        if(v.glow>0.05){const gr=c.createRadialGradient(v.x,v.y,0,v.x,v.y,size*4);gr.addColorStop(0,`rgba(${r},${g},${b2},${v.glow*.6})`);gr.addColorStop(1,`rgba(${r},${g},${b2},0)`);c.fillStyle=gr;c.beginPath();c.arc(v.x,v.y,size*4,0,Math.PI*2);c.fill();}
+        c.fillStyle=`rgba(${r},${g},${b2},${.5+v.glow*.45})`;c.shadowBlur=v.glow*14;c.shadowColor=`rgb(${r},${g},${b2})`;
+        c.beginPath();c.arc(v.x,v.y,size,0,Math.PI*2);c.fill();c.shadowBlur=0;
+        if(v.winding>3){c.strokeStyle=`rgba(${r},${g},${b2},0.16)`;c.lineWidth=1;c.beginPath();c.arc(aiCx,aiCy,oR,0,Math.PI*2);c.stroke();}
+        c.fillStyle='rgba(255,255,255,.7)';c.font='bold 7px Space Mono';
+        c.fillText((isMuted?'[M] ':'')+v.role.toUpperCase(),v.x+size+3,v.y+3);
+        if(isMuted)c.restore();
+      });
+
+      // Labels
+      c.strokeStyle='rgba(255,255,255,.1)';c.lineWidth=1;c.setLineDash([4,6]);
+      c.beginPath();c.moveTo(W/2,0);c.lineTo(W/2,H);c.stroke();c.setLineDash([]);
+      c.fillStyle='rgba(255,255,255,.65)';c.font='bold 9px Space Mono';c.textAlign='center';
+      c.fillText('YOU',W*.25,H-8);c.fillText(midiToNote(AR.current.lockedRoot??AR.current.rootMidi),W*.25,bY-6);
+      c.fillText('BAND',W*.75,H-8);c.fillText(`${midiToNote((aiPc+60)%128)} ${AR.current.chordType}`,W*.75,aY-6);
+      c.textAlign='left';
+
+      // Beat tick
+      if(isPlayRef.current&&AR.current.ctx){
+        const spb=60/((AR.current.lockedBpm||AR.current.bpm)*AR.current.warpMultiplier);
+        const phase=(AR.current.ctx.currentTime%spb)/spb;
+        const tx=W*.04+phase*(W*.92);
+        c.fillStyle=phase<0.06?'rgba(255,55,55,.95)':'rgba(255,255,255,.4)';c.fillRect(tx-1,H-7,2,7);
+      }
+
+      // -- MIC ANALYSIS --------------------------------------------------
+      if(micActive&&AR.current.analyser){
+        const an=AR.current.analyser;const fd=new Uint8Array(an.frequencyBinCount);an.getByteFrequencyData(fd);
+        let rms=0,maxIdx=0,maxVal=0;
+        for(let i=0;i<fd.length;i++){rms+=fd[i]*fd[i];if(fd[i]>maxVal){maxVal=fd[i];maxIdx=i;}}
+        rms=Math.sqrt(rms/fd.length);
+        AR.current.inputEnergy=rms/128;setInputEnergy(Math.min(1,rms/100));
+
+        const now2=Date.now();
+        const isOnset=rms>20&&rms>AR.current.previousEnergy*1.42&&(now2-AR.current.lastOnset)>120;
+        if(isOnset){
+          const delta=now2-AR.current.lastOnset;AR.current.lastOnset=now2;onsetRate++;
+          motifEng.addOnset(now2);
+          const result=motifEng._analyzeRhythm();
+          if(result&&!lockedRef.current){
+            const{bpm:ab,swingPct,subdivisions:sub}=result;
+            if(ab>=40&&ab<=250){
+              if(Math.abs(ab-AR.current.bpm)>10&&frame%12===0){addLog(`TEMPO: ${ab} BPM`);setTCFlag(true);setTimeout(()=>setTCFlag(false),1500);}
+              if(Math.abs(ab-AR.current.bpm)>3){AR.current.bpm=ab;if(frame%18===0)setBpm(ab);}
+            }
+            if(swingPct>0&&frame%20===0){setSwing(swingPct);AR.current.swing=swingPct;setDSwing(swingPct);}
+            if(sub>2&&frame%40===0)setSubdivisions(sub);
+          }
+        }
+        AR.current.previousEnergy=rms;
+
+        // HPS pitch detection
+        const nyq=AR.current.ctx.sampleRate/2;let bF=0,bV=0;
+        const mn=Math.floor(40/nyq*fd.length),mx=Math.floor(2000/nyq*fd.length);
+        for(let i=mn;i<mx;i++){const v=(fd[i]/255)*(fd[Math.min(fd.length-1,i*2)]/255)*(fd[Math.min(fd.length-1,i*3)]/255+0.1);if(v>bV){bV=v;bF=(i/fd.length)*nyq;}}
+
+        if(bF>40&&maxVal>33){
+          const midi=Math.round(69+12*Math.log2(bF/440));
+          if(midi>=24&&midi<=96){
+            if(!lockedRef.current){
+              if(motifEng.detectKeyChange(prevRootRef.current%12,midi%12)&&frame%25===0){
+                setKCFlag(true);setTimeout(()=>setKCFlag(false),2500);
+                addLog(`KEY: ${midiToNote(prevRootRef.current)} -> ${midiToNote(midi)}`);hap.keyChange();
+              }
+              AR.current.rootMidi=midi;prevRootRef.current=midi;
+            }
+            const pc=midi%12;pitchHistRef.current[pc]+=0.06;
+            if(isOnset)motifEng.addPitch(midi,now2);
+            if(frame%8===0){setDMidi(midi);const c=Math.round(maxVal/255*100);setConf(c);confidenceRef.current=c;}
+          }
+        }else if(frame%8===0){setConf(0);confidenceRef.current=0;}
+
+        // Scale + chord detection
+        if(frame%45===0){
+          const root=((AR.current.lockedRoot??AR.current.rootMidi)%12+12)%12;
+          const rot=Array(12).fill(0).map((_,i)=>pitchHistRef.current[((i+root)%12)]);
+          const det=bestScale(rot);AR.current.scale=det.sc;setScaleMode(det.name);
+          const active=pitchHistRef.current.map((v,i)=>({v,i})).filter(x=>x.v>.4).map(x=>x.i);
+          if(active.length>=2){const ct=bestChord(active);AR.current.chordType=ct;setCChord(ct);}
+        }
+
+        // Role classification
+        if(frame%38===0){
+          const nr=classifyRole(bF,rms,confidenceRef.current,onsetRate/38);onsetRate=0;
+          if(nr!==AR.current.userRole){
+            AR.current.userRole=nr;setUserRole(nr);
+            if(nr!=='unknown')addLog(`You: ${nr.toUpperCase()} . AI fills: ${['drum','bass','mid','lead'].filter(r=>r!==nr).join(', ')}`);
+          }
+        }
+        for(let i=0;i<12;i++)pitchActRef.current[i]*=0.89;
+      }
+      requestRef.current=requestAnimationFrame(renderLoop);
+    };
+    requestRef.current=requestAnimationFrame(renderLoop);
+    return()=>cancelAnimationFrame(requestRef.current);
+  },[micActive]);
+
+  // -- TAP CANVAS RENDER -----------------------------------------------------
+  useEffect(()=>{
+    const renderTap=()=>{
+      const canvas=tapCanvasRef.current;
+      if(!canvas){tapAnimRef.current=requestAnimationFrame(renderTap);return;}
+      const c=canvas.getContext('2d');const W=canvas.width,H=canvas.height;
+
+      c.fillStyle='rgba(5,8,16,0.25)';c.fillRect(0,0,W,H);
+
+      // Draw tap dots that fade out
+      const now=Date.now();
+      tapVizRef.current=tapVizRef.current.filter(dot=>now-dot.t<2000);
+      for(const dot of tapVizRef.current){
+        const age=(now-dot.t)/2000;const opacity=1-age;const radius=8+age*30;
+        const x=dot.x*W,y=dot.y*H;
+        // Color by midi note if available
+        const col=dot.midi?PC[dot.midi%12]:[34,211,238];
+        const gr=c.createRadialGradient(x,y,0,x,y,radius);
+        gr.addColorStop(0,`rgba(${col[0]},${col[1]},${col[2]},${opacity*.9})`);
+        gr.addColorStop(1,`rgba(${col[0]},${col[1]},${col[2]},0)`);
+        c.fillStyle=gr;c.beginPath();c.arc(x,y,radius,0,Math.PI*2);c.fill();
+      }
+
+      // Beat pulse ring on downbeat
+      if(isPlayRef.current&&AR.current.ctx){
+        const spb=60/((AR.current.lockedBpm||AR.current.bpm)*AR.current.warpMultiplier);
+        const phase=(AR.current.ctx.currentTime%spb)/spb;
+        if(phase<0.1){
+          const r=phase/0.1;
+          c.strokeStyle=`rgba(255,80,80,${1-r})`;c.lineWidth=2;
+          c.beginPath();c.arc(W/2,H/2,20+r*30,0,Math.PI*2);c.stroke();
+        }
+      }
+
+      // Input energy bar at bottom
+      const energy=AR.current.inputEnergy||0;
+      c.fillStyle='rgba(34,211,238,0.15)';c.fillRect(0,H-4,W,4);
+      c.fillStyle=`rgba(34,211,238,${0.5+energy*.5})`;c.fillRect(0,H-4,W*energy,4);
+
+      tapAnimRef.current=requestAnimationFrame(renderTap);
+    };
+    tapAnimRef.current=requestAnimationFrame(renderTap);
+    return()=>cancelAnimationFrame(tapAnimRef.current);
+  },[]);
+
+  // -- FX --------------------------------------------------------------------
+  const toggleFx=name=>{
+    if(!AR.current.ctx){addLog('Start band first to enable effects.');return;}
+    const on=bus.toggleFx(name);setFxOn(p=>({...p,[name]:on}));
+    addLog(`${name.toUpperCase()} ${on?'ON':'OFF'}`);hap.tap();
+  };
+
+  // -- GUIDE HANDLER ---------------------------------------------------------
+  const handleGuideChoice=async(choice)=>{
+    if(guideStep==='welcome'){
+      if(choice.includes('sing'))setGuideStep('singer');
+      else if(choice.includes('instrument'))setGuideStep('instrument');
+      else if(choice.includes('drum')||choice.includes('tap'))setGuideStep('drummer');
+      else if(choice.includes('listen')||choice.includes('explore'))setGuideStep('listen');
+      else setGuideStep('mobility');
+    }else{
+      setGuideVisible(false);
+      if(choice.includes('Mic')){await toggleMic();}
+      if(choice.includes('Start')){await togglePlay();}
+      // drummer guide just scrolls to tap pad
+    }
+  };
+
+  // -- CURRENT GUIDE ---------------------------------------------------------
+  const guide=GUIDE_STEPS.find(g=>g.id===guideStep)||GUIDE_STEPS[0];
+
+  // -- RENDER ----------------------------------------------------------------
+  const meterLabel={12:'3/4',14:'7/8',16:'4/4',20:'5/4',8:'2/4',24:'6/4',28:'7/4',32:'8/4'}[timeSignature]||timeSignature/4+'/4';
+  const roleColors={drum:'#f43f5e',bass:'#f59e0b',mid:'#a855f7',lead:'#22d3ee',unknown:'#475569'};
+  const roleIcons={drum:'(D)',bass:'(B)',mid:'(M)',lead:'(L)',unknown:'(?)'}; 
+  const subLabel={2:'8th',3:'triplet',4:'16th',5:'quin',6:'sex',7:'sept'};
+  const chordInvLabels={0:'Root',1:'1st inv',2:'2nd inv'};
+
+  return(
+  <div className="min-h-screen bg-[#050810] text-slate-300 p-2 md:p-4" style={{fontFamily:"'Space Mono',monospace"}}>
+  <div className="max-w-5xl mx-auto space-y-3">
+
+    {/* HEADER */}
+    <header className="flex justify-between items-start border-b border-slate-800/60 pb-2.5">
+      <div>
+        <h1 className="syne text-2xl font-black text-white tracking-tight">LIVE AI BAND</h1>
+        <p className="text-[8px] text-slate-600 tracking-[0.22em] uppercase">Beyond Bound . Neural Ensemble</p>
+      </div>
+      <div className="flex flex-wrap gap-1.5 justify-end">
+        {motifFlag&&<span className="text-[8px] bg-purple-500/15 text-purple-300 border border-purple-500/35 px-2 py-0.5 rounded-full animate-pulse">Echo Motif</span>}
+        {keyChangeFlag&&<span className="text-[8px] bg-amber-400/15 text-amber-300 border border-amber-400/35 px-2 py-0.5 rounded-full animate-pulse">Key Change!</span>}
+        {phraseRecording&&<span className="text-[8px] bg-rose-500/20 text-rose-300 border border-rose-500/40 px-2 py-0.5 rounded-full animate-pulse">REC Phrase...</span>}
+        <span className="text-[8px] bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full">{meterLabel} . {subLabel[subdivisions]||subdivisions+'div'}</span>
+        <span className="text-[8px] bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full">{scaleMode}</span>
+        <span className="text-[8px] bg-slate-800 text-cyan-400 border border-cyan-900 px-2 py-0.5 rounded-full">Brain {Math.round(brainQ*100)}%</span>
+      </div>
+    </header>
+
+    {/* TAB BAR */}
+    <div className="flex gap-2">
+      {[['band','BAND'],['improv','IMPROV']].map(([id,label])=>(
+        <button key={id} onClick={()=>setActiveTab(id)}
+          className={"px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest border transition-all "+(activeTab===id?'bg-cyan-500/15 text-cyan-300 border-cyan-500/40':'bg-slate-800/40 text-slate-500 border-slate-700 hover:border-slate-500')}>
+          {label}
+        </button>
+      ))}
+      {/* Phrase buttons always visible */}
+      <div className="ml-auto flex gap-1.5">
+        <button onClick={startPhrase} disabled={phraseRecording||!micActive}
+          className={"px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase border transition-all "+(phraseRecording?'opacity-30 cursor-not-allowed bg-slate-800 border-slate-700 text-slate-600':'bg-rose-500/10 border-rose-500/30 text-rose-400 hover:bg-rose-500/20 disabled:opacity-30')}>
+          {phraseRecording?'Recording...':'START PHRASE'}
+        </button>
+        <button onClick={endPhrase} disabled={!phraseRecording}
+          className="px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase border transition-all bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-30">
+          END PHRASE
+        </button>
+      </div>
+    </div>
+
+    {/* GUIDE */}
+    {guideVisible&&(
+      <div className="bg-[#0b1120] border border-cyan-500/20 rounded-xl p-4">
+        <div className="text-[9px] text-cyan-400 uppercase tracking-widest mb-1">{GUIDE_STEPS.find(g=>g.id===guideStep)?.title}</div>
+        <p className="text-[11px] text-slate-300 leading-relaxed mb-3 whitespace-pre-line">{GUIDE_STEPS.find(g=>g.id===guideStep)?.msg}</p>
+        <div className="flex flex-wrap gap-2">
+          {(GUIDE_STEPS.find(g=>g.id===guideStep)?.choices||[]).map(ch=>(
+            <button key={ch} onClick={()=>{
+              if(guideStep==='welcome'){
+                if(ch.includes('sing'))setGuideStep('motif_tutorial');
+                else if(ch.includes('instrument'))setGuideStep('instrument');
+                else if(ch.includes('drum'))setGuideStep('drummer');
+                else setGuideStep('listen');
+              }else{
+                setGuideVisible(false);
+                if(ch.includes('Mic')||ch.includes('Tutorial'))toggleMic();
+                if(ch.includes('Start'))togglePlay();
+              }
+            }}
+            className="px-3 py-1.5 bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-cyan-500/20 transition-all">
+              {ch}
+            </button>
+          ))}
+          <button onClick={()=>setGuideVisible(false)} className="px-3 py-1.5 bg-slate-800/60 border border-slate-700 text-slate-500 text-[10px] rounded-lg">Skip</button>
+        </div>
+      </div>
+    )}
+
+    {/* LAST PHRASE ANALYSIS */}
+    {lastPhrase&&(
+      <div className="bg-[#0b1120] border border-purple-500/20 rounded-xl p-3 flex flex-wrap gap-3 text-[9px]">
+        <div className="text-purple-400 uppercase tracking-widest font-bold self-center">Last Phrase</div>
+        <span className="bg-slate-800 px-2 py-1 rounded text-white">Key: {NOTE_NAMES[lastPhrase.root]}</span>
+        <span className="bg-slate-800 px-2 py-1 rounded text-purple-300">Chord: {lastPhrase.reharmonSuggestion}</span>
+        <span className="bg-slate-800 px-2 py-1 rounded text-amber-300">Time: {lastPhrase.timeSig}/4</span>
+        <span className="bg-slate-800 px-2 py-1 rounded text-cyan-300">Inv: {chordInvLabels[lastPhrase.inversion]||'Root'}</span>
+        {lastPhrase.hasTA&&<span className="bg-rose-500/20 border border-rose-500/30 text-rose-300 px-2 py-1 rounded">Turnaround detected</span>}
+        <span className="text-slate-600 self-center">{lastPhrase.ivs.slice(0,6).map(v=>v>0?'+'+v:v).join(' ')}</span>
+      </div>
+    )}
+
+    {/* NOTICES */}
+    {micActive&&!lockedIn&&<div className="bg-amber-500/8 border border-amber-500/22 rounded-lg px-3 py-1.5 text-[9px] text-amber-300/80">Mic active -- Lock In your feel then stop mic for best sound.</div>}
+    {lockedIn&&!micActive&&<div className="bg-cyan-500/8 border border-cyan-500/22 rounded-lg px-3 py-1.5 text-[9px] text-cyan-300/80">Hands-free. Band locked to your groove.</div>}
+
+    {/* =================================================================== */}
+    {/* BAND TAB */}
+    {/* =================================================================== */}
+    {activeTab==='band'&&(<div className="space-y-3">
+
+      {/* MAIN CANVAS + TAP */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="md:col-span-2 relative bg-[#080c14] rounded-xl border border-slate-800/50 overflow-hidden">
+          <canvas ref={canvasRef} width={700} height={220} className="w-full h-[180px] md:h-[220px] block"/>
+          <div className="absolute top-2 left-2">
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[8px] font-bold uppercase"
+              style={{background:roleColors[userRole]+'18',borderColor:roleColors[userRole]+'50',color:roleColors[userRole]}}>
+              {roleIcons[userRole]} You: {userRole}
+            </div>
+          </div>
+          <div className="absolute top-2 right-2 text-right">
+            <div className="text-[8px] text-slate-500"><span className="text-white font-bold text-sm">{bpm}</span> BPM</div>
+            <div className="text-[8px] text-purple-300">{midiToNote(detectedMidi)} . {currentChord}</div>
+            {lockedIn&&<div className="text-[7px] text-cyan-400 animate-pulse">[lock] locked</div>}
+          </div>
+          {/* Neural bass mode indicator */}
+          <div className="absolute bottom-2 left-2 text-[7px] font-mono text-emerald-400/60">
+            Neural Bass Active . {completedPhrases.length} phrase{completedPhrases.length!==1?'s':''} learned
+          </div>
+        </div>
+
+        <div className="relative bg-[#080c14] rounded-xl border border-slate-800/50 overflow-hidden flex flex-col">
+          <div className="text-[8px] text-emerald-400 uppercase tracking-widest font-bold px-3 pt-2 pb-1">Tap Input</div>
+          <div className="relative flex-1 tap-zone cursor-pointer"
+            onPointerDown={e=>{const r=e.currentTarget.getBoundingClientRect();handleTap(e,(e.clientX-r.left)/r.width,(e.clientY-r.top)/r.height);}}
+            role="button" aria-label="Tap pad" tabIndex={0}
+            onKeyDown={e=>(e.key===' '||e.key==='Enter')&&handleTap(e,0.5,0.5)}>
+            <canvas ref={tapCanvasRef} width={280} height={180} className="w-full h-full block"/>
+            {tapPulse&&<div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-12 h-12 rounded-full border-2 border-emerald-400 pr"/>
+            </div>}
+            <div className="absolute bottom-2 left-0 right-0 text-center pointer-events-none">
+              <div className="text-[8px] text-slate-600 uppercase tracking-widest">
+                {tapCount===0?'Tap here':tapCount<4?tapCount+' taps':bpm+'BPM'}
+              </div>
+            </div>
+          </div>
+          <div className="px-3 py-2 border-t border-slate-800/50 grid grid-cols-2 gap-2">
+            <div className="text-center">
+              <div className="text-[7px] text-slate-600 uppercase mb-0.5">Taps</div>
+              <div className="text-sm font-black text-emerald-400">{tapCount}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-[7px] text-slate-600 uppercase mb-0.5">Input</div>
+              <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mt-1">
+                <div className="h-full bg-cyan-400 rounded-full transition-all duration-100" style={{width:(inputEnergy*100)+'%'}}/>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* CONTROLS */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+
+        {/* COL 1: Sections + Reharm */}
+        <div className="bg-[#0b1120] border border-slate-800/60 rounded-xl p-3.5 space-y-3">
+          <div className="text-[9px] text-slate-400 uppercase tracking-[0.2em] font-bold">Sections</div>
+          <div className="grid grid-cols-5 gap-1.5">
+            {[{role:'drum',label:'DRUM'},{role:'sub',label:'SUB'},{role:'bass',label:'BASS'},{role:'mid',label:'MID'},{role:'lead',label:'LEAD'}].map(({role,label})=>{
+              const hex={drum:'#f43f5e',sub:'#06b6d4',bass:'#f59e0b',mid:'#a855f7',lead:'#22d3ee'}[role];
+              const muted=mutes[role];
+              return(
+                <button key={role} onClick={()=>toggleMute(role)}
+                  className="py-2 rounded-lg text-[7px] font-bold uppercase tracking-widest border transition-all section-btn"
+                  style={{background:muted?'#0d0d0d':hex+'15',borderColor:muted?'#334':hex+'60',color:muted?'#475569':hex}}>
+                  {muted?'[M]':''}{label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="text-[7px] text-slate-600 uppercase">Neural sub+bass . never stack</div>
+          {isPlaying&&<div className="space-y-1">
+            <div className="text-[7px] text-slate-600 uppercase tracking-widest">GR meters</div>
+            {[{label:'Master',val:gainReduction.master,col:'#22d3ee'},{label:'Drums',val:gainReduction.drum,col:'#f43f5e'},{label:'Bass',val:gainReduction.bass,col:'#f59e0b'},{label:'Sub',val:gainReduction.sub,col:'#06b6d4'}].map(({label,val,col})=>(
+              <div key={label} className="flex items-center gap-1.5">
+                <div className="text-[6px] w-8 text-slate-600">{label}</div>
+                <div className="flex-1 h-1 bg-slate-900 rounded-full overflow-hidden">
+                  <div className="h-full rounded-full transition-all duration-100" style={{width:Math.min(100,Math.abs(val||0)*5)+'%',background:col,opacity:0.7}}/>
+                </div>
+                <div className="text-[6px] w-6 text-right" style={{color:col}}>{val||0}dB</div>
+              </div>
+            ))}
+          </div>}
+          <button onClick={restartBand} disabled={!isPlaying}
+            className="w-full py-1.5 rounded-lg text-[9px] font-bold uppercase border border-slate-700 text-slate-400 hover:border-cyan-500/40 hover:text-cyan-400 transition-all disabled:opacity-30">
+            Restart Band
+          </button>
+          <div className="text-[9px] text-purple-400 uppercase tracking-widest font-bold">Reharm</div>
+          <div className="grid grid-cols-3 gap-1.5">
+            {[['maj','Major'],['min','Minor'],['quar','4ths'],['dom7','Dom 7'],['min7','Min 7'],['maj7','Maj 7'],['dom9','Dom 9'],['dim','Dim'],['aug','Aug']].map(([type,label])=>(
+              <button key={type} onClick={()=>reharm(type)}
+                className={"py-1.5 rounded-lg text-[8px] font-bold uppercase tracking-widest border transition-all "+(currentChord===type?'bg-purple-500/20 text-purple-200 border-purple-500/50':'bg-slate-800/50 text-slate-500 border-slate-700 hover:border-purple-500/30 hover:text-purple-400')}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* COL 2: Modulation */}
+        <div className="bg-[#0b1120] border border-slate-800/60 rounded-xl p-3.5 space-y-3">
+          <div className="text-[9px] text-cyan-400 uppercase tracking-[0.2em] font-bold">Modulation</div>
+          {[
+            {l:'Chaos',c:'text-cyan-400',v:Math.round(chaos*100)+'%',min:0,max:1,step:.01,val:chaos,set:setChaos,f:true},
+            {l:'Density',c:'text-purple-400',v:Math.round(density*100)+'%',min:0,max:1,step:.01,val:density,set:setDensity,f:true},
+            {l:'Tempo',c:'text-slate-400',v:bpm+' BPM',min:40,max:240,step:1,val:bpm,set:setBpm,f:false},
+            {l:'Swing',c:'text-amber-400',v:swing+'%',min:0,max:100,step:1,val:swing,set:setSwing,f:false},
+          ].map(({l,c,v,min,max,step,val,set,f})=>(
+            <div key={l}>
+              <div className="flex justify-between text-[8px] uppercase tracking-widest mb-1">
+                <span className={c}>{l}</span><span className="text-white font-bold">{v}</span>
+              </div>
+              <input type="range" min={min} max={max} step={step} value={val} onChange={e=>set(f?parseFloat(e.target.value):parseInt(e.target.value))}/>
+            </div>
+          ))}
+          <div>
+            <div className="text-[9px] text-cyan-400 uppercase tracking-widest font-bold mb-2">Key / Root</div>
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <div className="bg-black/50 p-2 rounded-lg border border-slate-800 text-center">
+                <p className="text-[7px] text-slate-600 uppercase mb-0.5">Root</p>
+                <p className="text-base font-black text-white">{midiToNote(detectedMidi)}</p>
+              </div>
+              <div className="bg-black/50 p-2 rounded-lg border border-slate-800 text-center">
+                <p className="text-[7px] text-slate-600 uppercase mb-0.5">Chord</p>
+                <p className="text-base font-black text-purple-300">{currentChord}</p>
+              </div>
+            </div>
+            {!micActive&&<input type="range" min="36" max="84" step="1" value={detectedMidi}
+              onChange={e=>{const v=parseInt(e.target.value);setDMidi(v);AR.current.rootMidi=v;}}/>}
+          </div>
+          <button onClick={toggleMic}
+            className={"w-full py-2 rounded-lg text-[10px] font-bold tracking-widest uppercase border transition-all "+(micActive?'bg-rose-500/10 text-rose-400 border-rose-500/40':'bg-cyan-500/10 text-cyan-400 border-cyan-500/30 hover:bg-cyan-500/20')}>
+            {micActive?'Stop Mic':'Open Mic'}
+          </button>
+          <button onClick={handleLockIn}
+            className={"w-full py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase border transition-all "+(lockedIn?'bg-cyan-500/12 text-cyan-300 border-cyan-500/45 locked':'bg-slate-800/60 text-slate-400 border-slate-700 hover:border-cyan-500/30')}>
+            {lockedIn?'[lock] Locked In':'[unlock] Lock In Groove'}
+          </button>
+        </div>
+
+        {/* COL 3: FX + Launch */}
+        <div className="bg-[#0b1120] border border-slate-800/60 rounded-xl p-3.5 space-y-3">
+          <div className="text-[9px] text-amber-400 uppercase tracking-[0.2em] font-bold">FX + Launch</div>
+          <div>
+            <div className="flex justify-between text-[8px] uppercase tracking-widest mb-1">
+              <span className="text-rose-400">DJ Warp</span><span className="text-white">{recordScratch}</span>
+            </div>
+            <input type="range" min="-100" max="100" step="1" value={recordScratch}
+              onChange={e=>setRS(parseInt(e.target.value))} onMouseUp={()=>setRS(0)} onTouchEnd={()=>setRS(0)}/>
+          </div>
+          <div>
+            <div className="text-[8px] text-slate-500 uppercase tracking-widest mb-1.5">Effects</div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {['reverb','delay','chorus'].map(n=>(
+                <button key={n} onClick={()=>toggleFx(n)}
+                  className={"py-1.5 rounded-lg text-[8px] font-bold uppercase border transition-all "+(fxOn[n]?'bg-emerald-500/15 text-emerald-300 border-emerald-500/40':'bg-slate-800/60 text-slate-500 border-slate-700 hover:border-slate-500')}>
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="text-[8px] text-slate-500 uppercase tracking-widest mb-1.5">Haptic</div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {Object.entries({standard:'Standard',bass:'Bass Pulse',rhythm:'Rhythm',chord:'Chord'}).map(([k,label])=>(
+                <button key={k} onClick={()=>{setHapticMode(k);hap.chordQuality('maj');}}
+                  className={"py-1.5 rounded-lg text-[8px] font-bold uppercase border transition-all "+(hapticMode===k?'bg-emerald-500/15 text-emerald-300 border-emerald-500/40':'bg-slate-800/60 text-slate-500 border-slate-700')}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <button onClick={()=>setDeafMode(d=>{const n=!d;if(n){addLog('Deaf Mode: Sub-bass boosted.');hap.subBass(bpm);}return n;})}
+            className={"w-full py-1.5 rounded-lg text-[9px] font-bold uppercase border transition-all "+(deafMode?'bg-emerald-500/15 text-emerald-300 border-emerald-500/40':'bg-slate-800/60 text-slate-500 border-slate-700')}>
+            {deafMode?'Deaf Mode ON':'Deaf Mode'}
+          </button>
+          <button onClick={togglePlay}
+            className={"w-full py-3 rounded-xl font-black text-sm uppercase tracking-widest "+(isPlaying?'bg-rose-500 text-white':'bg-emerald-500 text-slate-900')}>
+            {isPlaying?'HALT BAND':'START BAND'}
+          </button>
+        </div>
+      </div>
+
+      {/* VOICE MEMORY */}
+      <div className="bg-[#0b1120] border border-slate-800/60 rounded-xl p-3 grid grid-cols-4 gap-2">
+        {Object.entries(voicesRef.current).map(([role,v])=>{
+          const isU=userRole===role;const hex=roleColors[role];const pct=Math.min(100,v.winding*5);
+          return(
+            <div key={role} className={"p-2.5 rounded-lg border text-center transition-all cursor-pointer "+(isU?'opacity-30 border-white/10':'border-slate-800')+" "+(mutes[role]?'grayscale opacity-40':'')}
+              style={{background:hex+'0d'}} onClick={()=>toggleMute(role)}>
+              <div className="text-[7px] uppercase tracking-widest mb-1" style={{color:hex}}>{isU?'YOU':mutes[role]?'[M]':role}</div>
+              <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mb-1">
+                <div className="h-full rounded-full transition-all duration-700" style={{width:pct+'%',background:hex,boxShadow:'0 0 5px '+hex}}/>
+              </div>
+              <div className="text-[8px] text-white font-bold">{v.winding.toFixed(1)}<span className="text-slate-600 ml-0.5">w</span></div>
+            </div>
+          );
+        })}
+      </div>
+
+    </div>)}
+
+    {/* =================================================================== */}
+    {/* IMPROV TAB */}
+    {/* =================================================================== */}
+    {activeTab==='improv'&&(<div className="space-y-3">
+
+      {/* SONG UPLOAD */}
+      <div className="bg-[#0b1120] border border-amber-500/20 rounded-xl p-4">
+        <div className="text-[9px] text-amber-400 uppercase tracking-widest font-bold mb-2">Song Upload -- AI Analysis</div>
+        <p className="text-[10px] text-slate-400 mb-3">Upload any audio file. The AI extracts key and tempo and locks the band to your song.</p>
+        <div className="flex gap-2 items-center flex-wrap">
+          <button onClick={()=>fileInputRef.current&&fileInputRef.current.click()}
+            className="px-4 py-2 bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-bold uppercase rounded-lg hover:bg-amber-500/20 transition-all">
+            Choose Audio File
+          </button>
+          <input ref={fileInputRef} type="file" accept="audio/*" className="hidden" onChange={handleUpload}/>
+          {uploadStatus&&<span className="text-[9px] font-mono text-emerald-400">{uploadStatus}</span>}
+        </div>
+      </div>
+
+      {/* PHRASE LIBRARY */}
+      <div className="bg-[#0b1120] border border-purple-500/20 rounded-xl p-4">
+        <div className="text-[9px] text-purple-400 uppercase tracking-widest font-bold mb-2">Phrase Library ({completedPhrases.length} recorded)</div>
+        {completedPhrases.length===0?(
+          <p className="text-[10px] text-slate-600">No phrases yet. Open Mic, sing a melody, then use START/END PHRASE buttons above.</p>
+        ):(
+          <div className="space-y-1.5 max-h-48 overflow-y-auto">
+            {completedPhrases.map((ph,i)=>(
+              <div key={i} className="flex items-center gap-2 bg-slate-900/60 rounded-lg px-3 py-2">
+                <span className="text-[8px] text-purple-300 font-bold w-4">{i+1}</span>
+                <span className="text-[8px] text-white font-mono">{NOTE_NAMES[ph.root]}</span>
+                <span className="text-[8px] text-purple-400">{ph.reharmonSuggestion}</span>
+                <span className="text-[8px] text-amber-400">{ph.timeSig}/4</span>
+                <span className="text-[8px] text-cyan-400">{chordInvLabels[ph.inversion]||'Root'}</span>
+                {ph.hasTA&&<span className="text-[7px] text-rose-400">TA</span>}
+                <span className="text-[7px] text-slate-600 font-mono ml-auto">{ph.ivs.slice(0,5).map(v=>v>0?'+'+v:v).join(' ')}</span>
+                <button onClick={()=>{AR.current.chordType=ph.reharmonSuggestion;setCChord(ph.reharmonSuggestion);AR.current.rootMidi=60+ph.root;setDMidi(60+ph.root);addLog('Phrase '+( i+1)+' applied');}}
+                  className="text-[7px] px-2 py-0.5 bg-purple-500/10 border border-purple-500/30 text-purple-400 rounded hover:bg-purple-500/20">
+                  Apply
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* MIDI SOUND CREATOR */}
+      <div className="bg-[#0b1120] border border-cyan-500/20 rounded-xl p-4">
+        <div className="text-[9px] text-cyan-400 uppercase tracking-widest font-bold mb-3">MIDI Sound Creator -- Chord Inversions</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <div className="text-[8px] text-slate-500 uppercase tracking-widest">Root Note</div>
+            <div className="grid grid-cols-6 gap-1">
+              {NOTE_NAMES.map((n,i)=>(
+                <button key={n} onClick={()=>{setImprovRoot(60+i);AR.current.rootMidi=60+i;setDMidi(60+i);}}
+                  className={"py-1.5 rounded text-[8px] font-bold border transition-all "+(improvRoot===60+i?'bg-cyan-500/20 text-cyan-200 border-cyan-500/50':'bg-slate-800/50 text-slate-500 border-slate-700 hover:border-cyan-500/30')}>
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <div className="text-[8px] text-slate-500 uppercase tracking-widest">Chord Quality + Inversion</div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {Object.entries(CHORDS).slice(0,8).map(([type,def])=>(
+                <button key={type} onClick={()=>{setImprovChord(type);AR.current.chordType=type;setCChord(type);if(!isPlayRef.current)startBand();}}
+                  className={"py-1.5 rounded-lg text-[8px] font-bold uppercase border transition-all "+(improvChord===type?'bg-purple-500/20 text-purple-200 border-purple-500/50':'bg-slate-800/50 text-slate-500 border-slate-700 hover:border-purple-500/30')}>
+                  {def.label}
+                </button>
+              ))}
+            </div>
+            <div className="text-[7px] text-slate-600 mt-1">Tap any chord to instantly apply. Band starts if not playing.</div>
+          </div>
+        </div>
+        {/* Inversion selector */}
+        <div className="mt-3">
+          <div className="text-[8px] text-slate-500 uppercase tracking-widest mb-1.5">Voice Inversion</div>
+          <div className="flex gap-2">
+            {[['Root pos','root'],[' 1st inv','first'],['2nd inv','second']].map(([label,inv])=>(
+              <button key={inv} onClick={()=>{
+                const ct=CHORDS[improvChord]||CHORDS.maj;
+                const rootOff={root:0,first:ct.iv[1]||4,second:ct.iv[2]||7}[inv];
+                AR.current.rootMidi=(improvRoot-12+rootOff);
+                setDMidi(improvRoot-12+rootOff);
+                addLog('Inversion: '+label+' -- bass note '+NOTE_NAMES[((improvRoot+rootOff)%12+12)%12]);
+              }}
+              className="px-3 py-1.5 bg-slate-800/60 border border-slate-700 text-slate-400 text-[8px] font-bold rounded-lg hover:border-cyan-500/30 hover:text-cyan-400 transition-all">
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* MEMORY STORE STATUS */}
+      <div className="bg-[#0b1120] border border-slate-800/60 rounded-xl p-3">
+        <div className="text-[9px] text-slate-400 uppercase tracking-widest font-bold mb-2">Memory Store</div>
+        <div className="grid grid-cols-3 gap-2 text-center text-[8px]">
+          <div className="bg-slate-900/60 rounded-lg p-2">
+            <div className="text-slate-600 uppercase text-[7px] mb-0.5">Phrases Saved</div>
+            <div className="text-purple-400 font-black text-lg">{completedPhrases.length}</div>
+          </div>
+          <div className="bg-slate-900/60 rounded-lg p-2">
+            <div className="text-slate-600 uppercase text-[7px] mb-0.5">Supabase</div>
+            <div className="text-emerald-400 font-black text-lg">{isPlaying?'Live':'Ready'}</div>
+          </div>
+          <div className="bg-slate-900/60 rounded-lg p-2">
+            <div className="text-slate-600 uppercase text-[7px] mb-0.5">Neural Bass</div>
+            <div className="text-cyan-400 font-black text-lg">{Math.round(Math.min(100,bassBrain.history.length/32*100))}%</div>
+          </div>
+        </div>
+      </div>
+
+      {/* RECORDING */}
+      <div className="bg-[#0b1120] border border-rose-500/20 rounded-xl p-3">
+        <div className="text-[9px] text-rose-400 uppercase tracking-widest font-bold mb-2">In-App Recording</div>
+        <div className="flex gap-2 items-center flex-wrap">
+          <button onClick={toggleRecording}
+            className={"px-4 py-2 text-[10px] font-bold uppercase rounded-lg border transition-all "+(isRecording?'bg-rose-500/20 border-rose-500/50 text-rose-300 animate-pulse':'bg-slate-800/60 border-slate-700 text-slate-400 hover:border-rose-500/30 hover:text-rose-400')}>
+            {isRecording?'Stop Recording':'Record Session'}
+          </button>
+          {recordingUrl&&(
+            <a href={recordingUrl} download="live_ai_band_session.webm"
+              className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold uppercase rounded-lg hover:bg-emerald-500/20">
+              Download
+            </a>
+          )}
+          {isRecording&&<span className="text-[8px] text-rose-400 animate-pulse">Recording...</span>}
+        </div>
+      </div>
+
+      {/* BILLBOARD TOP 10 */}
+      <div className="bg-[#0b1120] border border-amber-500/20 rounded-xl p-3">
+        <div className="text-[9px] text-amber-400 uppercase tracking-widest font-bold mb-2">Billboard Top 10 -- Your Inputs</div>
+        {billboard.length===0?(
+          <p className="text-[9px] text-slate-600">No entries yet. Record phrases to populate.</p>
+        ):(
+          <div className="space-y-1">
+            {billboard.map(function(entry,idx){return(
+              <div key={idx} className="flex items-center gap-2 bg-slate-900/60 rounded px-2 py-1.5">
+                <span className="text-[8px] font-black w-4" style={{color:idx===0?'#f59e0b':idx<3?'#94a3b8':'#475569'}}>#{idx+1}</span>
+                <span className="text-[8px] text-white font-mono">{entry.key}</span>
+                <span className="text-[8px] text-purple-400">{entry.chord}</span>
+                <span className="text-[8px] text-amber-400">{entry.timeSig}/4</span>
+                {entry.hasTA&&<span className="text-[7px] text-rose-400">TA</span>}
+                <span className="text-[7px] text-slate-500 font-mono ml-1">{entry.ivs}</span>
+                <span className="text-[7px] text-slate-700 ml-auto">{entry.t}</span>
+              </div>
+            );})}
+          </div>
+        )}
+      </div>
+
+      {/* SIM3COLTS LIVE FEED */}
+      {sim3Balls.length>0&&(
+        <div className="bg-[#0b1120] border border-emerald-500/20 rounded-xl p-3">
+          <div className="text-[9px] text-emerald-400 uppercase tracking-widest font-bold mb-2">sim3colts Live -- {sim3Balls.length} balls</div>
+          <div className="relative h-20 bg-black/50 rounded-lg overflow-hidden">
+            {sim3Balls.slice(0,20).map(function(b,i){
+              const x=(b.x||0.5)*100;
+              const y=(b.y||0.5)*100;
+              const col=b.color||'#22d3ee';
+              const size=4+((b.winding||0)*0.8);
+              return(
+                <div key={i} className="absolute rounded-full transition-all duration-500"
+                  style={{left:x+'%',top:y+'%',width:size+'px',height:size+'px',
+                    background:col,boxShadow:'0 0 '+size+'px '+col,
+                    transform:'translate(-50%,-50%)'}}/>
+              );
+            })}
+          </div>
+          <div className="text-[7px] text-slate-700 mt-1">chaos: {sim3Chaos!==null?Number(sim3Chaos).toFixed(2):'--'}</div>
+        </div>
+      )}
+
+      {/* Launch from improv tab */}
+      <button onClick={togglePlay}
+        className={"w-full py-3 rounded-xl font-black text-sm uppercase tracking-widest "+(isPlaying?'bg-rose-500 text-white':'bg-emerald-500 text-slate-900')}>
+        {isPlaying?'HALT BAND':'START BAND'}
+      </button>
+
+    </div>)}
+
+    {/* LOG -- always visible */}
+    <div className="bg-black/50 border border-slate-800/50 rounded-xl p-2.5 h-24 overflow-y-auto space-y-0.5">
+      {log.map((m,i)=><div key={i} className="text-[8px] text-slate-500 leading-relaxed">{m}</div>)}
+    </div>
+
+    <p className="text-center text-[8px] text-slate-800 uppercase tracking-widest pb-1">Beyond Bound . Neural Bass . Phrase Memory . Deep Learning</p>
+  </div>
+  </div>
+  );
+}
+
+const root=createRoot(document.getElementById('root'));
+try {
+  root.render(<App/>);
+  setTimeout(()=>{const ls=document.getElementById('loading-screen');if(ls)ls.style.display='none';},300);
+} catch(err) {
+  const ls=document.getElementById('loading-screen');
+  if(ls){
+    ls.innerHTML='<div style="font-family:monospace;color:#f43f5e;padding:24px;max-width:340px;font-size:11px;line-height:1.8;word-break:break-all;">'
+      +'<div style="font-size:13px;margin-bottom:12px;color:#fff;">Render Error</div>'
+      +String(err)+'<br><br>'
+      +(err.stack||'').split('\n').slice(0,4).join('<br>')
+      +'</div>';
+  }
+}
+</script>
+</body>
+</html>
