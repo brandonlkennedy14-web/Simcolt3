@@ -3,189 +3,232 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Genesis Mainframe — Molecular Lab</title>
+    <title>Genesis Mainframe — Mission Control</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="GenesisBrain.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Syne+Mono&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
     <style>
-        :root { --plasma: #00ffe7; --void: #020810; --panel: rgba(2,10,22,0.97); }
-        body { background: var(--void); color: #c8d8e8; font-family: 'Syne', sans-serif; margin: 0; overflow: hidden; }
+        :root { --plasma: #00ffe7; --void: #020810; }
+        * { box-sizing: border-box; }
+        body { background: var(--void); color: #c8d8e8; font-family: 'Syne', sans-serif; margin: 0; overflow-x: hidden; }
+        html { overflow-y: auto; }
         .mono { font-family: 'Syne Mono', monospace; }
-        .grid-bg { position: fixed; inset: 0; background-image: linear-gradient(rgba(0,255,231,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,255,231,0.03) 1px, transparent 1px); background-size: 50px 50px; z-index: -1; }
-        .stat-card { background: rgba(0,255,231,0.05); border: 1px solid rgba(0,255,231,0.2); padding: 15px; border-radius: 4px; }
+
+        .grid-bg { position: fixed; inset: 0; background-image:
+            linear-gradient(rgba(0,255,231,0.03) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0,255,231,0.03) 1px, transparent 1px);
+            background-size: 50px 50px; z-index: -1; pointer-events: none; }
+
+        .stat-card { background: rgba(0,255,231,0.04); border: 1px solid rgba(0,255,231,0.15);
+            padding: 10px 14px; border-radius: 4px; min-width: 0; }
+
+        .sim-panel { position: relative; border-radius: 6px; overflow: hidden;
+            border: 1px solid rgba(0,255,231,0.15); background: #000; }
+        .sim-panel iframe { display: block; width: 100%; height: 100%; border: none; }
+
+        .sim-label { position: absolute; top: 8px; left: 10px; z-index: 10;
+            font-family: 'Syne Mono', monospace; font-size: 9px; letter-spacing: 2px;
+            text-transform: uppercase; color: rgba(0,255,231,0.7);
+            background: rgba(0,0,0,0.7); padding: 3px 8px; border-radius: 3px;
+            pointer-events: none; }
+
+        .sim-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+            background: #333; margin-right: 5px; vertical-align: middle; transition: background 0.4s; }
+        .sim-dot.live { background: #00ffe7; box-shadow: 0 0 6px #00ffe7; }
+
+        .expand-btn { position: absolute; top: 8px; right: 10px; z-index: 10;
+            background: rgba(0,0,0,0.75); border: 1px solid rgba(0,255,231,0.3);
+            color: #00ffe7; font-size: 11px; padding: 3px 9px; border-radius: 3px;
+            cursor: pointer; font-family: 'Syne Mono', monospace; letter-spacing: 1px; }
+        .expand-btn:hover { background: rgba(0,255,231,0.12); }
+
+        /* Fullscreen overlay */
+        #fs-overlay { display: none; position: fixed; inset: 0; z-index: 2000; background: #000; flex-direction: column; }
+        #fs-overlay.active { display: flex; }
+        #fs-iframe { flex: 1; width: 100%; border: none; }
+        #fs-close { position: absolute; top: 12px; right: 14px; z-index: 2001;
+            background: rgba(0,0,0,0.85); border: 1px solid rgba(0,255,231,0.4);
+            color: #00ffe7; font-family: 'Syne Mono', monospace; font-size: 11px;
+            padding: 5px 14px; border-radius: 4px; cursor: pointer; letter-spacing: 1px; }
+        #fs-close:hover { background: rgba(0,255,231,0.18); }
+
+        @keyframes pulse { 0%,100%{opacity:.5} 50%{opacity:1} }
         .pulse-glow { animation: pulse 2s infinite; }
-        @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
     </style>
 </head>
 <body>
-    <div class="grid-bg"></div>
+<div class="grid-bg"></div>
 
-    <header class="p-6 border-b border-cyan-900/50 bg-black/40 flex justify-between items-center">
-        <div>
-            <h1 class="text-2xl font-black tracking-tighter text-white">GENESIS <span class="text-cyan-400">ALCH-LAB</span></h1>
-            <p class="mono text-[10px] text-cyan-400 opacity-70">SYSTEM MODE: ATOMIC HARMONIC GRADING</p>
-        </div>
-        <div id="conn-status" class="mono text-xs text-yellow-500 flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-yellow-500 pulse-glow"></span> LINKING TO BUS...
-        </div>
-    </header>
+<!-- FULLSCREEN OVERLAY -->
+<div id="fs-overlay">
+    <button id="fs-close" onclick="closeFS()">✕ CLOSE</button>
+    <iframe id="fs-iframe" src=""></iframe>
+</div>
 
-    <main class="p-8 grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div class="stat-card">
-            <div class="text-[10px] uppercase opacity-50 mb-1">Global Stability</div>
-            <div id="stability-grade" class="text-3xl mono text-cyan-400 font-bold">GRADE --</div>
-        </div>
-        <div class="stat-card">
-            <div class="text-[10px] uppercase opacity-50 mb-1">Atomic Count</div>
-            <div id="atom-count" class="text-3xl mono text-white">0</div>
-        </div>
-        <div class="stat-card">
-            <div class="text-[10px] uppercase opacity-50 mb-1">Peak Frequency</div>
-            <div id="peak-freq" class="text-3xl mono text-pink-500">0.0Hz</div>
-        </div>
-        <div class="stat-card">
-            <div class="text-[10px] uppercase opacity-50 mb-1">Sync Version</div>
-            <div id="brain-version" class="text-3xl mono text-cyan-400">v0</div>
-        </div>
-        <!-- sim3 row -->
-        <div class="stat-card border-blue-900/40">
-            <div class="text-[10px] uppercase opacity-50 mb-1">Sim3 Chaos</div>
-            <div id="sim3-chaos" class="text-3xl mono text-blue-400 font-bold">--</div>
-        </div>
-        <div class="stat-card border-blue-900/40">
-            <div class="text-[10px] uppercase opacity-50 mb-1">Inversions</div>
-            <div id="sim3-inv" class="text-3xl mono text-purple-400">0</div>
-        </div>
-        <div class="stat-card border-blue-900/40">
-            <div class="text-[10px] uppercase opacity-50 mb-1">Deep Scan Level</div>
-            <div id="sim3-scan" class="text-3xl mono text-amber-400">Lv1</div>
-        </div>
-        <div class="stat-card border-blue-900/40">
-            <div class="text-[10px] uppercase opacity-50 mb-1">Sim3 Balls</div>
-            <div id="sim3-balls" class="text-3xl mono text-blue-300">0</div>
-        </div>
-        <!-- band row -->
-        <div class="stat-card border-yellow-900/40 col-span-2">
-            <div class="text-[10px] uppercase opacity-50 mb-1">Band</div>
-            <div id="band-status" class="text-xl mono text-yellow-400 font-bold">OFFLINE</div>
-        </div>
-        <div class="stat-card border-yellow-900/40">
-            <div class="text-[10px] uppercase opacity-50 mb-1">BPM</div>
-            <div id="band-bpm" class="text-3xl mono text-yellow-300">--</div>
-        </div>
-        <div class="stat-card border-yellow-900/40">
-            <div class="text-[10px] uppercase opacity-50 mb-1">Chord · Key</div>
-            <div id="band-chord" class="text-3xl mono text-orange-400">--</div>
-        </div>
-    </main>
+<!-- HEADER -->
+<header class="px-5 py-3 border-b border-cyan-900/40 bg-black/60 flex justify-between items-center sticky top-0 z-50">
+    <div>
+        <h1 class="text-xl font-black tracking-tighter text-white leading-none">
+            GENESIS <span class="text-cyan-400">MISSION CONTROL</span>
+        </h1>
+        <p class="mono text-[9px] text-cyan-400/50 tracking-widest uppercase">Beyond Bound · All Systems Live</p>
+    </div>
+    <div id="conn-status" class="mono text-[10px] text-yellow-500 flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-yellow-500 pulse-glow"></span> LINKING...
+    </div>
+</header>
 
-    <section class="px-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div class="bg-black/60 border border-cyan-900/30 rounded p-4 h-96 relative">
-            <h2 class="mono text-xs mb-4 text-cyan-500 uppercase tracking-widest">Spectral Distribution Monitor</h2>
-            <canvas id="spectral-monitor" class="w-full h-full opacity-80"></canvas>
-        </div>
-        <div class="bg-black/60 border border-cyan-900/30 rounded p-4 h-96 overflow-y-auto">
-            <h2 class="mono text-xs mb-4 text-cyan-500 uppercase tracking-widest">Combination Log</h2>
-            <div id="log-feed" class="mono text-[10px] space-y-1">
-                <div class="text-gray-600">> Awaiting molecular bond data...</div>
-            </div>
-        </div>
-    </section>
+<!-- STATS BAR -->
+<section class="px-4 pt-3 pb-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
+    <div class="stat-card">
+        <div class="text-[9px] uppercase opacity-40 mb-1">Stability</div>
+        <div id="stability-grade" class="text-xl mono text-cyan-400 font-bold">--</div>
+    </div>
+    <div class="stat-card">
+        <div class="text-[9px] uppercase opacity-40 mb-1">Atoms · Peak Hz</div>
+        <div id="atom-count" class="text-xl mono text-white">0</div>
+    </div>
+    <div class="stat-card" style="border-color:rgba(56,189,248,0.25)">
+        <div class="text-[9px] uppercase opacity-40 mb-1">Sim3 Chaos</div>
+        <div id="sim3-chaos" class="text-xl mono text-blue-400 font-bold">--</div>
+    </div>
+    <div class="stat-card" style="border-color:rgba(56,189,248,0.25)">
+        <div class="text-[9px] uppercase opacity-40 mb-1">Inv · Scan · Balls</div>
+        <div id="sim3-meta" class="text-xl mono text-purple-400">--</div>
+    </div>
+    <div class="stat-card col-span-2" style="border-color:rgba(245,158,11,0.25)">
+        <div class="text-[9px] uppercase opacity-40 mb-1">Band</div>
+        <div id="band-status" class="text-lg mono text-yellow-400 font-bold truncate">OFFLINE</div>
+    </div>
+    <div class="stat-card" style="border-color:rgba(245,158,11,0.25)">
+        <div class="text-[9px] uppercase opacity-40 mb-1">BPM</div>
+        <div id="band-bpm" class="text-xl mono text-yellow-300">--</div>
+    </div>
+    <div class="stat-card" style="border-color:rgba(245,158,11,0.25)">
+        <div class="text-[9px] uppercase opacity-40 mb-1">Chord · Key</div>
+        <div id="band-chord" class="text-xl mono text-orange-400">--</div>
+    </div>
+</section>
 
-    <script>
-        const canvas = document.getElementById('spectral-monitor');
-        const ctx = canvas.getContext('2d');
-        const logFeed = document.getElementById('log-feed');
+<!-- SIM GRID -->
+<section class="px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
 
-        async function initDashboard() {
-            await GenesisBrain.connect();
+    <!-- sim3colts -->
+    <div class="sim-panel" style="height:300px">
+        <div class="sim-label"><span class="sim-dot" id="dot-sim3"></span>SIM3COLTS</div>
+        <button class="expand-btn" onclick="openFS('sim3colts.html')">⛶ FULL</button>
+        <iframe src="sim3colts.html" title="sim3colts"></iframe>
+    </div>
 
-            const status = document.getElementById('conn-status');
-            status.innerHTML = '<span class="w-2 h-2 rounded-full bg-green-500"></span> MAINFRAME LIVE';
-            status.className = "mono text-xs text-green-500 flex items-center gap-2";
+    <!-- spectral link -->
+    <div class="sim-panel" style="height:300px">
+        <div class="sim-label"><span class="sim-dot" id="dot-spectral"></span>SPECTRAL LINK</div>
+        <button class="expand-btn" onclick="openFS('next_app_starter.html')">⛶ FULL</button>
+        <iframe src="next_app_starter.html" title="Spectral Link"></iframe>
+    </div>
 
-            GenesisBrain.on('update', (ns, data) => {
-                if (ns === 'tech') {
-                    updateTech(data);
-                    renderMiniView(data.activePulses);
-                }
-                if (ns === 'sim3')  updateSim3(data);
-                if (ns === 'band')  updateBand(data);
-            });
+    <!-- deep learning -->
+    <div class="sim-panel" style="height:300px">
+        <div class="sim-label"><span class="sim-dot" id="dot-deep"></span>DEEP LEARNING</div>
+        <button class="expand-btn" onclick="openFS('sim3colt_deep_learning.html')">⛶ FULL</button>
+        <iframe src="sim3colt_deep_learning.html" title="Deep Learning"></iframe>
+    </div>
 
-            // Hydrate from whatever is already in the brain on load
-            const s = GenesisBrain.state;
-            if (s.tech?.atomCount)   { updateTech(s.tech);   renderMiniView(s.tech.activePulses); }
-            if (s.sim3?.chaos_ratio !== undefined) updateSim3(s.sim3);
-            if (s.band?.bpm)         updateBand(s.band);
+    <!-- smell sim -->
+    <div class="sim-panel" style="height:300px">
+        <div class="sim-label"><span class="sim-dot" id="dot-smell"></span>SMELL · DIFFUSION</div>
+        <button class="expand-btn" onclick="openFS('smell_sim.html')">⛶ FULL</button>
+        <iframe src="smell_sim.html" title="Smell Sim"></iframe>
+    </div>
+
+    <!-- AI band — full width -->
+    <div class="sim-panel col-span-1 sm:col-span-2" style="height:400px">
+        <div class="sim-label"><span class="sim-dot" id="dot-band"></span>LIVE AI BAND</div>
+        <button class="expand-btn" onclick="openFS('ai_band.html')">⛶ FULL</button>
+        <iframe src="ai_band.html" title="AI Band"></iframe>
+    </div>
+
+</section>
+
+<script>
+    const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+
+    function openFS(src) {
+        document.getElementById('fs-iframe').src = src;
+        document.getElementById('fs-overlay').classList.add('active');
+    }
+    function closeFS() {
+        document.getElementById('fs-overlay').classList.remove('active');
+        document.getElementById('fs-iframe').src = '';
+    }
+    document.addEventListener('keydown', e => { if(e.key==='Escape') closeFS(); });
+
+    function flashDot(id) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.add('live');
+        clearTimeout(el._t);
+        el._t = setTimeout(() => el.classList.remove('live'), 2000);
+    }
+
+    function updateTech(data) {
+        const grade = (data.grade||'').replace('_',' ') || (data.atomCount > 10 ? 'GRADE A' : 'GRADE D');
+        const el = document.getElementById('stability-grade');
+        el.textContent = grade || '--';
+        el.style.color = grade.includes('A') ? '#4ade80' : '#f87171';
+        const maxP = data.activePulses?.length ? Math.max(...data.activePulses).toFixed(2) : '0.00';
+        document.getElementById('atom-count').textContent = `${data.atomCount ?? 0} · ${maxP}Hz`;
+        flashDot('dot-deep');
+    }
+
+    function updateSim3(data) {
+        const chaos = data.chaos_ratio ?? null;
+        const el = document.getElementById('sim3-chaos');
+        el.textContent = chaos !== null ? Number(chaos).toFixed(2) : '--';
+        el.style.color = chaos > 8 ? '#f87171' : chaos > 4 ? '#fbbf24' : '#60a5fa';
+        document.getElementById('sim3-meta').textContent =
+            `${data.inversions ?? '--'} · Lv${data.scan_level ?? 1} · ${data.balls?.length ?? '--'}`;
+        flashDot('dot-sim3');
+    }
+
+    function updateBand(data) {
+        const bpm = data.bpm || 0;
+        document.getElementById('band-bpm').textContent = bpm || '--';
+        document.getElementById('band-chord').textContent = data.chord_type
+            ? data.chord_type.toUpperCase() + (data.root_midi !== undefined ? ' · ' + NOTE_NAMES[data.root_midi % 12] : '')
+            : '--';
+        if (bpm > 0) {
+            document.getElementById('band-status').textContent =
+                `♪ LIVE · CHAOS ${((data.chaos||0)*100).toFixed(0)}% · ${(data.user_role||'').toUpperCase()}`;
+            flashDot('dot-band');
         }
+    }
 
-        function updateTech(data) {
-            document.getElementById('atom-count').textContent    = data.atomCount || 0;
-            document.getElementById('brain-version').textContent = 'v' + (data._version || 0);
+    async function init() {
+        await GenesisBrain.connect();
 
-            if (data.activePulses?.length) {
-                const maxPulse = Math.max(...data.activePulses);
-                document.getElementById('peak-freq').textContent = maxPulse.toFixed(2) + 'Hz';
-            }
+        document.getElementById('conn-status').innerHTML =
+            '<span class="w-2 h-2 rounded-full bg-green-500"></span> MAINFRAME LIVE';
+        document.getElementById('conn-status').className =
+            'mono text-[10px] text-green-400 flex items-center gap-2';
 
-            // Use the grade field written by deep learning — not re-derived here
-            const grade   = data.grade || (data.atomCount > 10 ? 'GRADE_A' : 'GRADE_D');
-            const display = grade.replace('_', ' ');
-            const gradEl  = document.getElementById('stability-grade');
-            gradEl.textContent  = display;
-            gradEl.className = grade === 'GRADE_A'
-                ? 'text-3xl mono text-green-400 font-bold'
-                : 'text-3xl mono text-red-500 font-bold';
-        }
+        GenesisBrain.on('update', (ns, data) => {
+            if (ns === 'tech') updateTech(data);
+            if (ns === 'sim3') updateSim3(data);
+            if (ns === 'band') updateBand(data);
+            // flash spectral dot on any update since it's purely reactive
+            if (ns === 'sim3' || ns === 'band') flashDot('dot-spectral');
+            if (ns === 'smell') flashDot('dot-smell');
+        });
 
-        function updateSim3(data) {
-            const chaos = data.chaos_ratio ?? '--';
-            const chaosEl = document.getElementById('sim3-chaos');
-            chaosEl.textContent = typeof chaos === 'number' ? chaos.toFixed(2) : chaos;
-            chaosEl.className   = chaos > 8 ? 'text-3xl mono text-red-400 font-bold'
-                                : chaos > 4 ? 'text-3xl mono text-amber-400 font-bold'
-                                :             'text-3xl mono text-blue-400 font-bold';
+        // Hydrate from current brain state immediately
+        const s = GenesisBrain.state;
+        if (s.tech?.atomCount !== undefined) updateTech(s.tech);
+        if (s.sim3?.chaos_ratio !== undefined) updateSim3(s.sim3);
+        if (s.band?.bpm !== undefined) updateBand(s.band);
+    }
 
-            document.getElementById('sim3-inv').textContent  = data.inversions ?? 0;
-            document.getElementById('sim3-scan').textContent = 'Lv' + (data.scan_level ?? 1);
-            document.getElementById('sim3-balls').textContent = data.balls?.length ?? 0;
-        }
-
-        function updateBand(data) {
-            const bpmVal = data.bpm || 0;
-            document.getElementById('band-bpm').textContent   = bpmVal ? bpmVal + '' : '--';
-            document.getElementById('band-chord').textContent = data.chord_type
-                ? data.chord_type.toUpperCase() + ' · ' + (data.root_midi !== undefined
-                    ? ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'][data.root_midi % 12]
-                    : '?')
-                : '--';
-            const bandEl = document.getElementById('band-status');
-            if (bpmVal > 0) {
-                bandEl.textContent  = `♪ LIVE · CHAOS ${((data.chaos||0)*100).toFixed(0)}% · ${data.user_role?.toUpperCase() || ''}`;
-                bandEl.className    = 'text-xl mono text-yellow-400 font-bold';
-            }
-        }
-
-        function renderMiniView(pulses) {
-            if (!pulses) return;
-            const w = canvas.width = canvas.offsetWidth;
-            const h = canvas.height = canvas.offsetHeight;
-            ctx.clearRect(0,0,w,h);
-
-            pulses.forEach((p, i) => {
-                const color = GenesisBrain.nmToRGB(p);
-                ctx.fillStyle = color;
-                const barWidth = w / pulses.length;
-                ctx.fillRect(i * barWidth, h - (p * h), barWidth - 2, p * h);
-
-                // Glow effect
-                ctx.shadowBlur = 10;
-                ctx.shadowColor = color;
-            });
-        }
-
-        window.onload = initDashboard;
-    </script>
+    window.addEventListener('load', init);
+</script>
 </body>
 </html>
