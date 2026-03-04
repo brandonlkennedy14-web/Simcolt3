@@ -307,6 +307,8 @@
             <button onclick="filterMuseum('v1')" id="mf-v1" style="font-size:10px;font-family:monospace;padding:4px 12px;border-radius:99px;border:1px solid rgba(56,189,248,0.3);background:transparent;color:#38bdf8;cursor:pointer;">V1</button>
             <button onclick="filterMuseum('v2')" id="mf-v2" style="font-size:10px;font-family:monospace;padding:4px 12px;border-radius:99px;border:1px solid rgba(168,85,247,0.3);background:transparent;color:#a855f7;cursor:pointer;">V2</button>
             <button onclick="filterMuseum('v3')" id="mf-v3" style="font-size:10px;font-family:monospace;padding:4px 12px;border-radius:99px;border:1px solid rgba(20,184,166,0.3);background:transparent;color:#14b8a6;cursor:pointer;">V3</button>
+            <button onclick="filterMuseum('trajectory')" id="mf-traj" style="font-size:10px;font-family:monospace;padding:4px 12px;border-radius:99px;border:1px solid rgba(245,158,11,0.3);background:transparent;color:#f59e0b;cursor:pointer;">⟳ TRAJ</button>
+            <button onclick="filterMuseum('platonic')" id="mf-plat" style="font-size:10px;font-family:monospace;padding:4px 12px;border-radius:99px;border:1px solid rgba(99,102,241,0.3);background:transparent;color:#6366f1;cursor:pointer;">◈ PLATONIC</button>
             <span id="museum-count" style="font-size:10px;font-family:monospace;color:#334155;margin-left:auto;align-self:center;"></span>
         </div>
         <div id="museum-list">
@@ -346,7 +348,7 @@
             if (error) {
                 // Museum table may not exist yet — sim still runs, just won't skip known configs
                 console.warn('Museum load failed (table may need creating):', error.message);
-                console.info('Run in Supabase SQL Editor: CREATE TABLE IF NOT EXISTS museum (hash text primary key, chaos_ratio text, tick_detected bigint, inversions int, version text, scan_level int, exclusion_dist int, trail_len int, parent_hash text, created_at timestamptz default now());');
+                console.info('Run in Supabase SQL Editor: CREATE TABLE IF NOT EXISTS museum (hash text primary key, chaos_ratio text, tick_detected bigint, inversions int, version text, scan_level int, exclusion_dist int, trail_len int, parent_hash text, boundary_type text, winding_signature text, discovery_bounds text, created_at timestamptz default now()); -- Also run: ALTER TABLE museum ADD COLUMN IF NOT EXISTS boundary_type text; ALTER TABLE museum ADD COLUMN IF NOT EXISTS winding_signature text; ALTER TABLE museum ADD COLUMN IF NOT EXISTS discovery_bounds text;');
             } else if (data) {
                 data.forEach(item => sharedKnownHashes.add(item.hash));
                 console.log(`Museum loaded: ${data.length} known configurations`);
@@ -468,6 +470,13 @@
     }
     function filterMuseum(v) {
         museumFilter = v;
+        // Highlight active filter button
+        ['all','v1','v2','v3','trajectory','platonic'].forEach(id => {
+            const btn = document.getElementById('mf-'+id);
+            if (!btn) return;
+            btn.style.fontWeight = v===id ? '700' : '400';
+            btn.style.textDecoration = v===id ? 'underline' : 'none';
+        });
         renderMuseumList();
     }
     async function loadMuseumData() {
@@ -484,7 +493,10 @@
         }
     }
     function renderMuseumList() {
-        const rows = museumFilter === 'all' ? museumData : museumData.filter(r => r.version === museumFilter);
+        const rows = museumFilter === 'all' ? museumData
+            : (museumFilter === 'trajectory' || museumFilter === 'platonic')
+                ? museumData.filter(r => r.boundary_type === museumFilter)
+                : museumData.filter(r => r.version === museumFilter);
         document.getElementById('museum-count').textContent = rows.length + ' entries';
         const vColors = { v1:'#38bdf8', v2:'#a855f7', v3:'#14b8a6' };
         const list = document.getElementById('museum-list');
@@ -492,11 +504,16 @@
             list.innerHTML = '<div style="text-align:center;color:#334155;font-family:monospace;font-size:12px;padding:40px;">No entries found</div>';
             return;
         }
-        list.innerHTML = rows.map(r => `
+        list.innerHTML = rows.map(r => {
+            const btColor = r.boundary_type==='trajectory' ? '#f59e0b' : '#6366f1';
+            const btLabel = r.boundary_type==='trajectory' ? '⟳ TRAJ' : '◈ PLATONIC';
+            const windParts = r.winding_signature ? r.winding_signature.split(',').slice(0,5).join(' ') : null;
+            return `
             <div class="museum-row museum-${r.version||'v1'}">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
                     <div style="font-size:10px;font-family:monospace;color:${vColors[r.version]||'#38bdf8'};word-break:break-all;flex:1;">${r.hash||'—'}</div>
                     <span style="font-size:9px;font-family:monospace;padding:2px 7px;border-radius:99px;background:rgba(0,0,0,0.4);color:${vColors[r.version]||'#38bdf8'};white-space:nowrap;">${(r.version||'v1').toUpperCase()}</span>
+                    <span style="font-size:8px;font-family:monospace;padding:2px 6px;border-radius:99px;background:rgba(0,0,0,0.4);color:${btColor};white-space:nowrap;border:1px solid ${btColor}44;">${btLabel}</span>
                 </div>
                 <div style="display:flex;gap:16px;margin-top:8px;font-size:9px;font-family:monospace;color:#475569;flex-wrap:wrap;">
                     <span>CHAOS <span style="color:#94a3b8;">${r.chaos_ratio||'—'}</span></span>
@@ -504,9 +521,11 @@
                     <span>TICK <span style="color:#94a3b8;">${r.tick_detected??'—'}</span></span>
                     ${r.scan_level ? `<span>SCAN <span style="color:#f59e0b;">Lv${r.scan_level}</span></span>` : ''}
                     ${r.parent_hash ? `<span style="color:#334155;">⬡ child</span>` : ''}
+                    ${windParts ? `<span style="color:#334155;">W: <span style="color:#64748b;font-family:monospace;">${windParts}</span></span>` : ''}
                     <span style="margin-left:auto;">${r.created_at ? new Date(r.created_at).toLocaleDateString() : ''}</span>
                 </div>
-            </div>`).join('');
+            </div>`;
+        }).join('');
     }
 </script>
 
@@ -663,11 +682,32 @@ function initV1() {
     let lastMuseumTicks = 0;
 
     function generateHash() {
-        let str=balls.map(b=>`${b.type}_${b.vx.toFixed(1)}_${b.vy.toFixed(1)}`).join('|');
-        let hash=0;
-        for(let i=0;i<str.length;i++) hash=Math.imul(31,hash)+str.charCodeAt(i)|0;
-        if(simMode==='discovery'){
-            let currentBoundSize=Math.floor(discoveryBounds.maxX-discoveryBounds.minX);
+        // Trajectory-based boundary fingerprint:
+        // Uses winding numbers + path crossing density grid, not just velocities.
+        // Each ball's accumulated winding is bucketed (±0.5 resolution) so
+        // two runs with the same boundary topology produce the same hash.
+        let windSig = balls.map(b => {
+            const wb = Math.round(b.winding * 2) / 2; // 0.5-resolution bucket
+            return `${b.type}_W${wb}_V${b.vx.toFixed(1)}_${b.vy.toFixed(1)}`;
+        }).join('|');
+        // Trajectory crossing density: divide space into 4x4 grid, count path pts per cell
+        let grid = new Array(16).fill(0);
+        balls.forEach(b => {
+            if (!b.path || b.path.length < 2) return;
+            const stride = Math.max(1, Math.floor(b.path.length / 20)); // sample 20 pts
+            for (let i = 0; i < b.path.length; i += stride) {
+                const px = b.path[i].x, py = b.path[i].y;
+                const cx = Math.min(3, Math.max(0, Math.floor((px + 200) / 100)));
+                const cy = Math.min(3, Math.max(0, Math.floor((py + 200) / 100)));
+                grid[cy * 4 + cx]++;
+            }
+        });
+        const gridSig = grid.map(v => Math.min(9, Math.floor(v / 3))).join('');
+        let hash = 0;
+        const full = windSig + gridSig;
+        for (let i = 0; i < full.length; i++) hash = Math.imul(31, hash) + full.charCodeAt(i) | 0;
+        if (simMode === 'discovery') {
+            let currentBoundSize = Math.floor(discoveryBounds.maxX - discoveryBounds.minX);
             return `Disc_W${currentBoundSize}_${Math.abs(hash).toString(16)}`;
         }
         return `${currentGeoName}_${Math.abs(hash).toString(16)}`;
@@ -870,17 +910,24 @@ function initV1() {
         }
         draw();
 
-        if(sharedDbConnected && ticks>0 && ticks-lastMuseumTicks>=10000 && chaosRatio<8.0){
+        const v1ChaosGate = simMode==='discovery' ? 20.0 : 8.0;
+        if(sharedDbConnected && ticks>0 && ticks-lastMuseumTicks>=10000 && chaosRatio<v1ChaosGate){
             lastMuseumTicks=ticks;
             let currentEvolvedHash=generateHash();
             if(!sharedKnownHashes.has(currentEvolvedHash)){
                 sharedKnownHashes.add(currentEvolvedHash);
+                // Trajectory boundary snapshot: winding stats + path density
+                const windingStats = balls.map(b=>b.winding.toFixed(2)).join(',');
+                const boundaryType = simMode==='discovery'?'trajectory':'platonic';
                 sharedSupabase.from('museum').upsert({
                     hash:currentEvolvedHash,
                     chaos_ratio:chaosRatio.toFixed(2),
                     tick_detected:ticks,
                     inversions,
-                    version:'v1'
+                    version:'v1',
+                    boundary_type: boundaryType,
+                    winding_signature: windingStats,
+                    discovery_bounds: simMode==='discovery'?JSON.stringify(discoveryBounds):null
                 }).catch(e=>console.error(e));
             }
         }
@@ -1106,9 +1153,26 @@ function initV2() {
 
     function generateHash(){
         const cfg=getScanConfig();
-        let str=balls.map(b=>`${b.type}_${b.vx.toFixed(1)}_${b.vy.toFixed(1)}`).join('|');
-        let hash=0;
-        for(let i=0;i<str.length;i++) hash=Math.imul(31,hash)+str.charCodeAt(i)|0;
+        // Trajectory + winding signature (same logic as V1 but includes scan config)
+        let windSig=balls.map(b=>{
+            const wb=Math.round(b.winding*2)/2;
+            return `${b.type}_W${wb}_V${b.vx.toFixed(1)}_${b.vy.toFixed(1)}`;
+        }).join('|');
+        let grid=new Array(16).fill(0);
+        balls.forEach(b=>{
+            if(!b.path||b.path.length<2)return;
+            const stride=Math.max(1,Math.floor(b.path.length/20));
+            for(let i=0;i<b.path.length;i+=stride){
+                const cx=Math.min(3,Math.max(0,Math.floor((b.path[i].x+200)/100)));
+                const cy=Math.min(3,Math.max(0,Math.floor((b.path[i].y+200)/100)));
+                grid[cy*4+cx]++;
+            }
+        });
+        // V2: also incorporate wall heat signature
+        const heatSig=wallHeat.map(v=>Math.min(9,Math.floor(v/(wallHeatMax||1)*9))).join('');
+        const gridSig=grid.map(v=>Math.min(9,Math.floor(v/3))).join('');
+        let hash=0; const full=windSig+gridSig+heatSig;
+        for(let i=0;i<full.length;i++) hash=Math.imul(31,hash)+full.charCodeAt(i)|0;
         let prefix=simMode==='discovery'
             ?`Disc_W${Math.floor(discoveryBounds.maxX-discoveryBounds.minX)}_Ex${cfg.exclusionDist}_v2`
             :`${currentGeoName}_Ex${cfg.exclusionDist}_v2`;
@@ -1415,7 +1479,8 @@ function initV2() {
         }
         draw();
 
-        if(sharedDbConnected&&ticks>0&&ticks-lastMuseumTicks>=10000&&chaosRatio<8.0){
+        const v2ChaosGate = simMode==='discovery' ? 20.0 : 8.0;
+        if(sharedDbConnected&&ticks>0&&ticks-lastMuseumTicks>=10000&&chaosRatio<v2ChaosGate){
             lastMuseumTicks=ticks;
             let hash=generateHash();
             if(!sharedKnownHashes.has(hash)){
@@ -1423,7 +1488,9 @@ function initV2() {
                 museumCount++;
                 document.getElementById('v2-stat-museum').textContent=museumCount;
                 lastDiscoveryFlash=performance.now();
-                showToast(scanLevel>1?'🔬':'🏛️',scanLevel>1?`Deep Scan Lv${scanLevel} Discovery`:'New Structure Found',hash.substring(0,32)+'...');
+                const boundaryType=simMode==='discovery'?'trajectory':'platonic';
+                showToast(scanLevel>1?'🔬':'🏛️',scanLevel>1?`Deep Scan Lv${scanLevel} Discovery`:boundaryType==='trajectory'?'Trajectory Boundary Found':'New Structure Found',hash.substring(0,32)+'...');
+                const windingStats=balls.map(b=>b.winding.toFixed(2)).join(',');
                 sharedSupabase.from('museum').upsert({
                     hash,
                     chaos_ratio:chaosRatio.toFixed(2),
@@ -1433,7 +1500,10 @@ function initV2() {
                     scan_level:scanLevel,
                     exclusion_dist:getScanConfig().exclusionDist,
                     trail_len:getScanConfig().trailLen,
-                    parent_hash:scanParentHash||null
+                    parent_hash:scanParentHash||null,
+                    boundary_type: boundaryType,
+                    winding_signature: windingStats,
+                    discovery_bounds: simMode==='discovery'?JSON.stringify(discoveryBounds):null
                 }).catch(e=>console.error(e));
                 setTimeout(()=>triggerDeepScan(hash),200);
             }
@@ -1479,6 +1549,25 @@ function initV2() {
         v2TabDisc.style.cssText='padding:8px 16px;border-radius:8px;color:#94a3b8;cursor:pointer;background:none;border:none;';
         v2GeoCont.style.display='flex';initBalls();
     };
+    function v2SendDiscoveryToMuseum() {
+        if(!sharedDbConnected){alert('Not connected to museum DB');return;}
+        const hash=generateHash();
+        const windingStats=balls.map(b=>b.winding.toFixed(2)).join(',');
+        sharedKnownHashes.add(hash);
+        sharedSupabase.from('museum').upsert({
+            hash, chaos_ratio:chaosRatio.toFixed(2),
+            tick_detected:ticks, inversions, version:'v2',
+            scan_level:scanLevel, exclusion_dist:getScanConfig().exclusionDist,
+            trail_len:getScanConfig().trailLen, parent_hash:scanParentHash||null,
+            boundary_type:'trajectory',
+            winding_signature:windingStats,
+            discovery_bounds:JSON.stringify(discoveryBounds)
+        }).then(()=>{
+            const btn=document.getElementById('v2-museum-btn');
+            if(btn){btn.textContent='✓ Saved!';btn.style.color='#34d399';setTimeout(()=>{btn.textContent='🏛 Send to Museum';btn.style.color='#c084fc';},2000);}
+        }).catch(e=>{alert('Save failed: '+e.message);});
+    }
+
     v2TabDisc.onclick=()=>{
         simMode='discovery';scanLevel=1;scanParentHash=null;
         document.getElementById('v2-deep-badge').classList.remove('active');
@@ -1487,7 +1576,17 @@ function initV2() {
         v2Title.style.background='linear-gradient(to right,#c084fc,#ec4899)';
         v2TabDisc.style.cssText='padding:8px 16px;border-radius:8px;color:#c084fc;font-weight:700;border-bottom:2px solid #c084fc;cursor:pointer;background:none;';
         v2TabPlat.style.cssText='padding:8px 16px;border-radius:8px;color:#94a3b8;cursor:pointer;background:none;border:none;';
-        v2GeoCont.style.display='none';initBalls();
+        v2GeoCont.style.display='none';
+        let existBtn=document.getElementById('v2-museum-btn');
+        if(!existBtn){
+            const btn=document.createElement('button');
+            btn.id='v2-museum-btn';
+            btn.textContent='🏛 Send to Museum';
+            btn.style.cssText='padding:6px 14px;border-radius:8px;border:1px solid rgba(192,132,252,0.4);background:rgba(192,132,252,0.1);color:#c084fc;font-size:10px;font-family:monospace;cursor:pointer;letter-spacing:0.08em;margin-left:8px;';
+            btn.onclick=v2SendDiscoveryToMuseum;
+            v2TabDisc.parentElement.appendChild(btn);
+        } else { existBtn.style.display='inline-block'; }
+        initBalls();
     };
     document.getElementById('v2-geo-select').onchange=(e)=>{
         currentGeoName=e.target.value;activeGeo=geometries[currentGeoName];
@@ -1651,9 +1750,24 @@ function initV3() {
     }
 
     function generateHash() {
-        let h=balls.map(b=>`${b.type}_${b.vx.toFixed(1)}_${b.vy.toFixed(1)}`).join('|');
-        let hash=0;
-        for(let i=0;i<h.length;i++){hash=(hash<<5)-hash+h.charCodeAt(i);hash|=0;}
+        // Trajectory + winding signature for V3
+        let windSig=balls.map(b=>{
+            const wb=Math.round(b.winding*2)/2;
+            return `${b.type}_W${wb}_V${b.vx.toFixed(1)}_${b.vy.toFixed(1)}`;
+        }).join('|');
+        let grid=new Array(16).fill(0);
+        balls.forEach(b=>{
+            if(!b.path||b.path.length<2)return;
+            const stride=Math.max(1,Math.floor(b.path.length/20));
+            for(let i=0;i<b.path.length;i+=stride){
+                const cx=Math.min(3,Math.max(0,Math.floor((b.path[i].x+200)/100)));
+                const cy=Math.min(3,Math.max(0,Math.floor((b.path[i].y+200)/100)));
+                grid[cy*4+cx]++;
+            }
+        });
+        const gridSig=grid.map(v=>Math.min(9,Math.floor(v/3))).join('');
+        let hash=0; const full=windSig+gridSig;
+        for(let i=0;i<full.length;i++){hash=(hash<<5)-hash+full.charCodeAt(i);hash|=0;}
         const hash16=Math.abs(hash).toString(16).padStart(8,'0');
         return simMode==='discovery'?`Disc_W${Math.round(discoveryBounds.maxX-discoveryBounds.minX)}_v3_${hash16}`:`${currentGeoName}_v3_${hash16}`;
     }
@@ -1831,15 +1945,21 @@ function initV3() {
         draw();
 
         // Museum logging
-        if(sharedDbConnected&&ticks>0&&ticks-lastMuseumTicks>=10000&&chaosRatio<8.0){
+        const v3ChaosGate = simMode==='discovery' ? 20.0 : 8.0;
+        if(sharedDbConnected&&ticks>0&&ticks-lastMuseumTicks>=10000&&chaosRatio<v3ChaosGate){
             lastMuseumTicks=ticks;
             let hash=generateHash();
             if(!sharedKnownHashes.has(hash)){
                 sharedKnownHashes.add(hash); museumCount++;
                 document.getElementById('v3-stat-museum').textContent=museumCount;
+                const windingStats=balls.map(b=>b.winding.toFixed(2)).join(',');
+                const boundaryType=simMode==='discovery'?'trajectory':'platonic';
                 sharedSupabase.from('museum').upsert({
                     hash, chaos_ratio:chaosRatio.toFixed(2),
-                    tick_detected:ticks, inversions, version:'v3'
+                    tick_detected:ticks, inversions, version:'v3',
+                    boundary_type: boundaryType,
+                    winding_signature: windingStats,
+                    discovery_bounds: simMode==='discovery'?JSON.stringify(discoveryBounds):null
                 }).catch(e=>console.error(e));
             }
         }
@@ -1863,10 +1983,38 @@ function initV3() {
         document.getElementById('v3-tab-discovery').style.cssText+='color:#94a3b8;border-bottom:none;';
         initBalls();
     };
+    function v3SendDiscoveryToMuseum() {
+        if(!sharedDbConnected){alert('Not connected to museum DB');return;}
+        const hash=generateHash();
+        const windingStats=balls.map(b=>b.winding.toFixed(2)).join(',');
+        sharedKnownHashes.add(hash);
+        sharedSupabase.from('museum').upsert({
+            hash, chaos_ratio:chaosRatio.toFixed(2),
+            tick_detected:ticks, inversions, version:'v3',
+            boundary_type:'trajectory',
+            winding_signature:windingStats,
+            discovery_bounds:JSON.stringify(discoveryBounds)
+        }).then(()=>{
+            const btn=document.getElementById('v3-museum-btn');
+            if(btn){btn.textContent='✓ Saved!';btn.style.color='#34d399';setTimeout(()=>{btn.textContent='🏛 Send to Museum';btn.style.color='#14b8a6';},2000);}
+        }).catch(e=>{alert('Save failed: '+e.message);});
+    }
+
     document.getElementById('v3-tab-discovery').onclick=()=>{
         simMode='discovery'; currentGeoName='Disc';
         document.getElementById('v3-tab-discovery').style.cssText+='color:#14b8a6;font-weight:700;border-bottom:2px solid #14b8a6;';
         document.getElementById('v3-tab-platonic').style.cssText+='color:#94a3b8;border-bottom:none;';
+        // Show museum send button
+        const discBtn=document.getElementById('v3-tab-discovery');
+        let existBtn=document.getElementById('v3-museum-btn');
+        if(!existBtn){
+            const btn=document.createElement('button');
+            btn.id='v3-museum-btn';
+            btn.textContent='🏛 Send to Museum';
+            btn.style.cssText='padding:6px 14px;border-radius:8px;border:1px solid rgba(20,184,166,0.4);background:rgba(20,184,166,0.1);color:#14b8a6;font-size:10px;font-family:monospace;cursor:pointer;letter-spacing:0.08em;margin-left:8px;';
+            btn.onclick=v3SendDiscoveryToMuseum;
+            discBtn.parentElement.appendChild(btn);
+        } else { existBtn.style.display='inline-block'; }
         initBalls();
     };
     window.addEventListener('resize',()=>{ if(activeVersion==='v3') resizeCanvas(); });
