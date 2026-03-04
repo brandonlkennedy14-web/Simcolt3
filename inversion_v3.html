@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Inversion Sim v3</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #111;
+            color: #eee;
+            margin: 0;
+            font-family: monospace;
+        }
+        canvas {
+            border: 2px solid #00ffcc;
+            background-color: #222;
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.1);
+            margin-top: 20px;
+        }
+        #hud {
+            text-align: center;
+            font-size: 1.2rem;
+        }
+        .highlight {
+            color: #ff0055;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="hud">
+        Winding Number: <span id="windingDisplay" class="highlight">0</span> | 
+        Last Precision Δ: <span id="precisionDisplay" class="highlight">0.000</span>
+    </div>
+
+    <canvas id="simCanvas" width="600" height="600"></canvas>
+
+    <script>
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+        const L = canvas.width;
+
+        // UI Elements
+        const windingDisplay = document.getElementById('windingDisplay');
+        const precisionDisplay = document.getElementById('precisionDisplay');
+
+        // Particle State
+        let particle = {
+            x: L / 2,
+            y: L / 2,
+            vx: 7.3, // Non-integer velocities help prevent repeating infinite loops
+            vy: 4.1,
+            radius: 5
+        };
+
+        class WindingSquare {
+            constructor(size) {
+                this.L = size;
+                this.windingNumber = 0;
+            }
+
+            updateState(p) {
+                let hitX = false;
+                let hitY = false;
+
+                // Move particle
+                p.x += p.vx;
+                p.y += p.vy;
+
+                // X-axis boundaries
+                if (p.x - p.radius <= 0 || p.x + p.radius >= this.L) {
+                    hitX = true;
+                    p.vx *= -1; 
+                    // Snap to boundary to prevent sticking
+                    p.x = p.x - p.radius <= 0 ? p.radius : this.L - p.radius; 
+                }
+
+                // Y-axis boundaries
+                if (p.y - p.radius <= 0 || p.y + p.radius >= this.L) {
+                    hitY = true;
+                    p.vy *= -1;
+                    p.y = p.y - p.radius <= 0 ? p.radius : this.L - p.radius;
+                }
+
+                // The "Double Bounce" (Corner Hit)
+                if (hitX && hitY) {
+                    this.registerDoubleBounce(p);
+                }
+            }
+
+            registerDoubleBounce(p) {
+                this.windingNumber++;
+                
+                // Determine geometric absolute vertex
+                const targetX = (p.x < this.L / 2) ? 0 : this.L;
+                const targetY = (p.y < this.L / 2) ? 0 : this.L;
+
+                const errorX = Math.abs(p.x - targetX);
+                const errorY = Math.abs(p.y - targetY);
+                const precisionDelta = Math.sqrt(errorX * errorX + errorY * errorY);
+
+                // Update UI
+                windingDisplay.innerText = this.windingNumber;
+                precisionDisplay.innerText = precisionDelta.toFixed(3);
+            }
+        }
+
+        const engine = new WindingSquare(L);
+
+        // Render Loop
+        function draw() {
+            // Fade effect for trails
+            ctx.fillStyle = 'rgba(34, 34, 34, 0.3)';
+            ctx.fillRect(0, 0, L, L);
+
+            engine.updateState(particle);
+
+            // Draw particle
+            ctx.beginPath();
+            ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+            ctx.fillStyle = '#00ffcc';
+            ctx.fill();
+            ctx.closePath();
+
+            requestAnimationFrame(draw);
+        }
+
+        draw();
+    
+    // ── GENESIS BRAIN BRIDGE ──────────────────────────────────────────────
+    const GB_URL = 'https://xoolmbmnzbsvcqeyqvyi.supabase.co';
+    const GB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhvb2xtYm1uemJzdmNleXhxdnlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDMwNDQsImV4cCI6MjA4NzAxOTA0NH0.ebTwMZ_byU6EXtuR0jynct64QO5ornQrCwElQ5b9TxQ';
+    const GB_HDRS = {
+        'apikey': GB_KEY, 'Authorization': 'Bearer ' + GB_KEY,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
+    };
+    let _gbV3 = 0, _gbLast3 = 0;
+    function gbWriteV3(payload) {
+        const now = Date.now();
+        if (now - _gbLast3 < 1500) return;
+        _gbLast3 = now;
+        fetch(GB_URL + '/rest/v1/genesis_brain', {
+            method: 'POST', headers: GB_HDRS,
+            body: JSON.stringify({ namespace: 'winding_v3', version: ++_gbV3, payload: { ...payload, _ts: now } })
+        }).catch(() => {});
+    }
+
+    // Listen for band data — speed up ball with BPM
+    let _bandV3 = null;
+    (function connectV3() {
+        const wsUrl = GB_URL.replace('https://', 'wss://') +
+            '/realtime/v1/websocket?apikey=' + GB_KEY + '&vsn=1.0.0';
+        const ws = new WebSocket(wsUrl);
+        ws.onopen = () => {
+            ws.send(JSON.stringify({
+                topic: 'realtime:public:genesis_brain', event: 'phx_join',
+                payload: { config: { broadcast: { self: false }, presence: { key: '' },
+                    postgres_changes: [{ event: '*', schema: 'public', table: 'genesis_brain' }] } },
+                ref: 'v3-1'
+            }));
+            setInterval(() => {
+                if (ws.readyState === 1)
+                    ws.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: null }));
+            }, 25000);
+        };
+        ws.onmessage = (e) => {
+            try {
+                const msg = JSON.parse(e.data);
+                const rec = msg?.payload?.data?.record || msg?.payload?.data?.new || msg?.payload?.record;
+                if (rec?.namespace === 'band' && rec.payload) {
+                    _bandV3 = rec.payload;
+                    // BPM drives ball speed — feel the beat physically
+                    if (ball && _bandV3.bpm > 0) {
+                        const spd = Math.sqrt(ball.dx*ball.dx + ball.dy*ball.dy);
+                        const targetSpd = 2 + (_bandV3.bpm / 120) * 2;
+                        const scale = targetSpd / Math.max(0.1, spd);
+                        ball.dx *= scale; ball.dy *= scale;
+                    }
+                }
+            } catch(_) {}
+        };
+        ws.onerror = () => setTimeout(connectV3, 5000);
+    })();
+
+    // Hook into existing animation loop — publish every ~90 frames
+    const _origDraw = typeof draw === 'function' ? draw : null;
+    let _v3Tick = 0;
+    const _v3Interval = setInterval(() => {
+        if (typeof ball !== 'undefined' && ball) {
+            gbWriteV3({
+                winding_number: typeof windingNumber !== 'undefined' ? windingNumber : 0,
+                ball_x: parseFloat((ball.x / (canvas?.width||500)).toFixed(3)),
+                ball_y: parseFloat((ball.y / (canvas?.height||500)).toFixed(3)),
+                speed:  parseFloat(Math.sqrt(ball.dx*ball.dx + ball.dy*ball.dy).toFixed(3)),
+                band_reactive: _bandV3 != null,
+            });
+        }
+    }, 1500);
+</script>
+</body>
+</html>
