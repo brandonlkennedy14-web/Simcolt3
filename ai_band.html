@@ -108,15 +108,27 @@ const collectiveBrainLoad=async()=>{
     const rows=await r.json();
     if(!Array.isArray(rows)||rows.length===0)return;
     const p=rows[0].payload; if(!p)return;
-    // Merge Q-table: blend 70% collective / 30% fresh so new users still explore
+    // Merge Q-table: blend 70% collective / 30% fresh (chord-context keys preserved)
     if(p.q&&typeof p.q==='object'){
       for(const[k,v]of Object.entries(p.q)){
         brain.q[k]=brain.q[k]!=null?(brain.q[k]*0.3+v*0.7):v;
       }
     }
+    // Merge voicing memory (chord shape learning)
+    if(p.voicingMem&&typeof p.voicingMem==='object'){
+      for(const[ct,pool]of Object.entries(p.voicingMem)){
+        if(!brain.voicingMem[ct]) brain.voicingMem[ct]=[];
+        pool.forEach(v=>{
+          const ex=brain.voicingMem[ct].find(e=>e.sig===v.sig);
+          if(ex){ex.score=ex.score*0.3+v.score*0.7; ex.uses+=v.uses;}
+          else brain.voicingMem[ct].push({...v,score:v.score*0.7});
+        });
+        brain.voicingMem[ct].sort((a,b)=>b.score-a.score).splice(12);
+      }
+    }
     if(typeof p.n==='number') brain.n=Math.max(brain.n,Math.floor(p.n*0.8));
     if(typeof p.eps==='number') brain.eps=Math.min(brain.eps,p.eps+0.05);
-    // Merge neural bass weights same ratio
+    // Merge neural bass weights
     if(Array.isArray(p.bassWeights)&&p.bassWeights.length===bassBrain.weights.length){
       bassBrain.weights=bassBrain.weights.map((row,i)=>
         row.map((w,j)=>w*0.3+(p.bassWeights[i]?.[j]??w)*0.7)
@@ -130,18 +142,19 @@ const collectiveBrainLoad=async()=>{
     }
     if(p.progression) progressionMemory.load(p.progression);
     if(p.convergence) convergenceTracker.load(p.convergence);
-    console.log('[GenesisBrain] Collective brain loaded — n:'+brain.n+' phrases:'+motifEng.phrases.length+' progs:'+progressionMemory.library.length);
+    const voicingCount=Object.values(brain.voicingMem).reduce((s,a)=>s+a.length,0);
+    console.log('[GenesisBrain] Loaded — n:'+brain.n+' phrases:'+motifEng.phrases.length+' voicings:'+voicingCount);
   }catch(e){console.warn('[GenesisBrain] Brain load failed',e);}
 };
 
 let _brainSaveTimer=null;
 const collectiveBrainSave=()=>{
-  // Debounce — save at most once every 8 seconds
   clearTimeout(_brainSaveTimer);
   _brainSaveTimer=setTimeout(async()=>{
     try{
       const payload={
         q:           brain.q,
+        voicingMem:  brain.voicingMem,   // chord shape memory
         n:           brain.n,
         eps:         brain.eps,
         bassWeights: bassBrain.weights,
@@ -155,7 +168,8 @@ const collectiveBrainSave=()=>{
         method:'POST',headers:SB_UH,
         body:JSON.stringify({namespace:BRAIN_NS,version:Date.now(),payload})
       });
-      console.log('[GenesisBrain] Collective brain saved — n:'+brain.n);
+      const voicingCount=Object.values(brain.voicingMem).reduce((s,a)=>s+a.length,0);
+      console.log('[GenesisBrain] Saved — n:'+brain.n+' voicings:'+voicingCount);
     }catch(e){console.warn('[GenesisBrain] Brain save failed',e);}
   },8000);
 };
@@ -177,8 +191,8 @@ const chaosRewardEngine={
     const aligned=(isDissonant&&isChaotic)||(!isDissonant&&!isChaotic);
     const rewardVal=aligned?0.85:0.25;
     // Reward all intervals in current chord
-    ct.iv.forEach(iv=>brain.reward('lead',iv,rewardVal));
-    ct.iv.forEach(iv=>brain.reward('mid',iv,rewardVal));
+    ct.iv.forEach(iv=>brain.reward('lead',iv,rewardVal,chordType));
+    ct.iv.forEach(iv=>brain.reward('mid',iv,rewardVal,chordType));
     // Reinforce bass brain with chaos signal
     const inputs=bassBrain.history[bassBrain.history.length-1];
     if(inputs){
@@ -708,17 +722,106 @@ class MotifEngine{
 }
 const motifEng=new MotifEngine();
 
-// -- Q-LEARNING HARMONY BRAIN --------------------------------------------------
+// -- DEVICE CAPABILITY PROFILER -----------------------------------------------
+// Runs once on load. Shapes scheduler timing, BPM cap, and polyphony budget.
+const DeviceComp = (() => {
+  const cores = navigator.hardwareConcurrency || 2;
+  const mem   = navigator.deviceMemory || 4;
+  const t0    = performance.now();
+  let _x = 0; for(let i=0;i<50000;i++) _x += Math.sqrt(i);
+  const bench = performance.now() - t0;
+  const coreScore = Math.min(1, (cores - 2) / 6);
+  const memScore  = Math.min(1, (mem  - 1) / 7);
+  const perfScore = Math.max(0, Math.min(1, 1 - (bench - 2) / 18));
+  const score     = coreScore*0.3 + memScore*0.3 + perfScore*0.4;
+  console.log(`[DeviceComp] score=${score.toFixed(2)} cores=${cores} mem=${mem}GB bench=${bench.toFixed(1)}ms`);
+  return {
+    score,
+    get lookahead() { return 0.35 - score * 0.23; },
+    get catchUp()   { return 0.5  - score * 0.35; },
+    get maxBpm()    { return Math.round(145 + score * 95); },
+    get timerMs()   { return Math.round(8 + (1-score) * 22); },
+    get maxLayers() { return Math.round(3 + score * 3); },
+    label: score > 0.65 ? 'strong' : score > 0.35 ? 'mid' : 'weak',
+  };
+})();
+
+// -- Q-LEARNING HARMONY BRAIN (chord-context aware) ----------------------------
+// Q-table keys are now role_interval_chordCtx so the brain learns that
+// interval 7 in dom7 context differs from interval 7 in maj context.
+// rewardVoicing() learns full chord shapes as units, not just single notes.
 class Brain{
-  constructor(){this.q={};this.n=0;this.eps=0.35;}
-  con(iv){const m=((iv%12)+12)%12;return{0:1.0,7:.92,5:.88,4:.80,3:.72,9:.68,8:.62,2:.40,10:.40,1:.08,6:.05,11:.18}[m]??0.3;}
-  choose(role,opts,chaos){
-    this.n++;this.eps=Math.max(0.04,0.35-this.n*0.0002);
-    if(Math.random()>this.eps){let b=opts[0],bw=-Infinity;for(const v of opts){const k=`${role}_${((v%12)+12)%12}`;const w=(this.q[k]??0.5)*(1+this.con(v)*(1-chaos*.6));if(w>bw){bw=w;b=v;}}return b;}
+  constructor(){
+    this.q={};           // "role_iv_chordCtx" -> value 0-1
+    this.voicingMem={};  // chordType -> [{sig,ivSet,score,uses}]
+    this.n=0;
+    this.eps=0.35;
+    this._ctx='maj';
+  }
+
+  con(iv){
+    const m=((iv%12)+12)%12;
+    return{0:1.0,7:.92,5:.88,4:.80,3:.72,9:.68,8:.62,2:.40,10:.40,1:.08,6:.05,11:.18}[m]??0.3;
+  }
+
+  setChord(ct){ this._ctx=ct||'maj'; }
+
+  _k(role,iv,ctx){ return `${role}_${((iv%12)+12)%12}_${ctx||this._ctx}`; }
+
+  choose(role,opts,chaos,chordCtx){
+    this.n++; this.eps=Math.max(0.04,0.35-this.n*0.0002);
+    const ctx=chordCtx||this._ctx;
+    if(Math.random()>this.eps){
+      let b=opts[0],bw=-Infinity;
+      for(const v of opts){
+        const ctxVal =(this.q[this._k(role,v,ctx)]??0.5);
+        const globVal=(this.q[this._k(role,v,'global')]??0.5);
+        const w=(ctxVal*0.7+globVal*0.3)*(1+this.con(v)*(1-chaos*.6));
+        if(w>bw){bw=w;b=v;}
+      }
+      return b;
+    }
     return opts[Math.floor(Math.random()*opts.length)];
   }
-  reward(role,iv,val){const k=`${role}_${((iv%12)+12)%12}`;this.q[k]=(this.q[k]??0.5)+0.08*(val-(this.q[k]??0.5));}
-  auto(role,ivs,chaos){for(const v of ivs)this.reward(role,v,this.con(v)*(1-chaos*.4));}
+
+  reward(role,iv,val,chordCtx){
+    const ctx=chordCtx||this._ctx;
+    const k =this._k(role,iv,ctx);
+    const kG=this._k(role,iv,'global');
+    this.q[k] =(this.q[k] ??0.5)+0.08*(val-(this.q[k] ??0.5));
+    this.q[kG]=(this.q[kG]??0.5)+0.04*(val-(this.q[kG]??0.5));
+  }
+
+  // Learn a full voicing (array of intervals) as a unit for a given chord type.
+  rewardVoicing(chordType, ivSet, val){
+    if(!this.voicingMem[chordType]) this.voicingMem[chordType]=[];
+    const sig=ivSet.slice().sort((a,b)=>a-b).join(',');
+    const ex=this.voicingMem[chordType].find(v=>v.sig===sig);
+    if(ex){ ex.score=Math.min(1,ex.score+val*0.15); ex.uses++; }
+    else{
+      this.voicingMem[chordType].push({sig,ivSet:[...ivSet],score:Math.min(1,val),uses:1});
+      if(this.voicingMem[chordType].length>12)
+        this.voicingMem[chordType].sort((a,b)=>b.score-a.score).splice(12);
+    }
+    ivSet.forEach(iv=>this.reward('mid', iv,val,  chordType));
+    ivSet.forEach(iv=>this.reward('lead',iv,val*0.8,chordType));
+  }
+
+  // Best learned voicing for a chord type, weighted by score
+  suggestVoicing(chordType){
+    const pool=this.voicingMem[chordType];
+    if(!pool||!pool.length) return null;
+    const top=pool.slice(0,3);
+    const total=top.reduce((s,v)=>s+v.score,0);
+    let r=Math.random()*total;
+    for(const v of top){r-=v.score;if(r<=0)return v.ivSet;}
+    return top[0].ivSet;
+  }
+
+  auto(role,ivs,chaos,chordCtx){
+    for(const v of ivs) this.reward(role,v,this.con(v)*(1-chaos*.4),chordCtx);
+  }
+
   get quality(){return Math.min(1,this.n/400);}
 }
 const brain=new Brain();
@@ -1214,9 +1317,6 @@ function App(){
   const recordChunksRef=useRef([]);
   const[sim3Balls,setSim3Balls]=useState([]); // from genesis_brain sim3 namespace
   const[sim3Chaos,setSim3Chaos]=useState(null); // top-level chaos_ratio from sim3
-  const[smellData,setSmellData]=useState(null); // from smell_sim
-  const[techData,setTechData]=useState(null);   // from sim3colts_deep_learning
-  const[windingData,setWindingData]=useState(null); // from winding-room-square
 
   const canvasRef=useRef(null);
   const tapCanvasRef=useRef(null);
@@ -1301,18 +1401,6 @@ function App(){
         if(rec?.namespace==='sim3'&&rec.payload?.balls){
           setSim3Balls(rec.payload.balls);
           setSim3Chaos(rec.payload.chaos_ratio??null);
-        }
-        if(rec?.namespace==='smell'&&rec.payload){
-          setSmellData(rec.payload);
-          window._smellLatest=rec.payload;
-        }
-        if(rec?.namespace==='tech'&&rec.payload){
-          setTechData(rec.payload);
-          window._techLatest=rec.payload;
-        }
-        if((rec?.namespace==='winding'||rec?.namespace==='winding_v3')&&rec.payload){
-          setWindingData(rec.payload);
-          window._windingLatest=rec.payload;
         }
       }catch(_){}
     };
@@ -1674,9 +1762,11 @@ function App(){
     const ie=ar.inputEnergy||0.5;
     const tick=ar.tick++;
     Object.values(voices).forEach(v=>v.tick());
+    // Keep brain in sync with current chord context
+    brain.setChord(chordType);
 
     if(beat===0){
-      brain.auto(userRole,[0,4,7,11],chaos); collectiveBrainSave();
+      brain.auto(userRole,[0,4,7,11],chaos,chordType); collectiveBrainSave();
       // -- LEARNING ENGINES: fire every measure ----------------------------
       const sim3Ch=window._sim3ChaosLatest||chaos;
       chaosRewardEngine.update(sim3Ch, chordType);
@@ -1688,62 +1778,6 @@ function App(){
       if(sugg)setProgSuggestion(sugg);
       // Update convergence score display
       setConvergenceScore(convergenceTracker.sessionScore);
-      // -- SMELL SENSE: dominant element biases chord choice ---------------
-      // assimilation elements (H, N) -> pull toward modal/minor chords
-      // repulsion elements (B)       -> push toward dissonant chords  
-      // structure elements (He,Li,Be,C,O) -> reinforce current chord
-      const smell=window._smellLatest;
-      if(smell?.dominant_logic){
-        const sLevel=smell.synthesis_level||0;
-        if(smell.dominant_logic==='assimilation'){
-          brain.reward(userRole,3,0.7+sLevel*0.2); // minor 3rd
-          brain.reward(userRole,10,0.65+sLevel*0.2); // minor 7th
-        }else if(smell.dominant_logic==='repulsion'){
-          brain.reward(userRole,6,0.75+sLevel*0.2); // tritone
-          brain.reward(userRole,1,0.6);              // minor 2nd
-        }else if(smell.dominant_logic==='structure'){
-          // reinforce whatever chord is playing
-          const ct=CHORDS[chordType]||CHORDS.maj;
-          ct.iv.forEach(iv=>brain.reward(userRole,iv,0.8+sLevel*0.15));
-        }
-        // If synthesis converging (>0.7) — lock in current patterns
-        if(sLevel>0.7){
-          ar.lockedRoot=ar.lockedRoot??rootMidi;
-          addLog('[SMELL] Synthesis converging — locking root '+midiToNote(rootMidi));
-        }
-      }
-      // -- TECH SENSE: atom grade affects density + bass mode ---------------
-      const tech=window._techLatest;
-      if(tech?.grade==='GRADE_A'&&tech.chaos!=null){
-        const newDens=Math.min(1,density+0.008);
-        ar.density=newDens;setDensity(newDens);
-      }
-      if(tech?.chaos!=null){
-        const blendedChaos=Math.max(chaos,(tech.chaos+chaos)*0.5);
-        bassBrain.update(ar.lockedRoot??rootMidi, blendedChaos, ((rootMidi%12)/12), beat);
-      }
-      // -- WINDING SENSE: winding room struct_ratio biases root note --------
-      // High struct_ratio (ordered trajectories) = reward perfect 5ths/4ths
-      // Low struct_ratio (chaotic) = reward chromatic/dissonant intervals
-      // Total winding number shifts bass octave register
-      const winding=window._windingLatest;
-      if(winding?.struct_ratio!=null){
-        const sr=winding.struct_ratio;
-        if(sr>0.6){
-          brain.reward('bass',7,0.85);  // perfect 5th
-          brain.reward('bass',5,0.80);  // perfect 4th
-          brain.reward('bass',0,0.90);  // root
-        }else if(sr<0.35){
-          brain.reward('bass',1,0.75);  // minor 2nd
-          brain.reward('bass',6,0.70);  // tritone
-          brain.reward('bass',11,0.65); // major 7th
-        }
-        // Winding number total modulates bass warp multiplier
-        if(winding.total_winding>0){
-          const windBoost=Math.min(0.3,(winding.total_winding/500)*0.3);
-          ar.warpMultiplier=Math.max(0.8,Math.min(1.4,1.0+windBoost));
-        }
-      }
       if(Math.random()<chaos*0.2){
         const ms=[12,14,16,20];const m=ms[Math.floor(Math.random()*ms.length)];
         ar.stepsPerMeasure=m;setTS(m);
@@ -1817,7 +1851,7 @@ function App(){
     // Sub owns downbeat (beat 0) and the half-note (beat 8 in 4/4).
     // Bass fills offbeats and syncopations. They share winding memory.
     if(!sup.bass&&!mutes.bass&&bassOpts.length){
-      const iv=brain.choose(userRole,bassOpts,chaos);
+      const iv=brain.choose(userRole,bassOpts,chaos,chordType);
       const baseNote=rootMidi+iv-12;
 
       // Sub bass: plays on beat 0 and beat bb (half note positions)
@@ -1841,9 +1875,17 @@ function App(){
     if(!sup.mid&&!mutes.mid&&midOpts.length){
       const prob=beat===0?1:chaos*0.55*(hist.m?0.08:1.9);
       if(Math.random()<prob){
-        const notes=chaos>0.72?[rootMidi,rootMidi+5,rootMidi+10]:ct.iv.map(v=>rootMidi+v);
+        // Check if brain has a learned voicing for this chord — use it 40% of the time
+        const learnedVoicing=brain.suggestVoicing(chordType);
+        const useLearnedVoicing=learnedVoicing&&Math.random()<0.40&&brain.n>50;
+        const chosenIvs=useLearnedVoicing?learnedVoicing:ct.iv;
+        const notes=chaos>0.72?[rootMidi,rootMidi+5,rootMidi+10]:chosenIvs.map(v=>rootMidi+v);
         synthMid(ctx,time,notes,chordType,chaos,warpMultiplier,bus.getInput('mid'),voices.mid.winding*0.07);
         voices.mid.play();
+        // Reward this voicing — brain learns it was played in this chord context
+        // Reward strength scales with chaos alignment and voice winding
+        const voicingReward=0.55+voices.mid.winding*0.04+voices.mid.glow*0.1;
+        brain.rewardVoicing(chordType, chosenIvs, voicingReward);
         if(hapticModeRef.current==='chord')hap.chordQuality(chordType);
       }
     }
@@ -1852,9 +1894,11 @@ function App(){
     if(!sup.lead&&!mutes.lead&&leadOpts.length){
       const prob=density*(hist.l?0.14:1.6)*0.65;
       if(Math.random()<prob){
-        const iv=brain.choose(userRole,leadOpts,chaos);
+        const iv=brain.choose(userRole,leadOpts,chaos,chordType);
         synthLead(ctx,time,rootMidi+iv,chaos,warpMultiplier,bus.getInput('lead'),voices.lead.winding*0.07);
         voices.lead.play();voices.lead.lastNote=rootMidi+iv;
+        // Reward the lead interval in this chord context
+        brain.reward('lead',iv,0.6+voices.lead.glow*0.2,chordType);
       }
     }
 
@@ -1863,7 +1907,11 @@ function App(){
 
   const scheduler=()=>{
     const ar=AR.current;
-    while(ar.nextNoteTime<ar.ctx.currentTime+0.1){
+    // DeviceComp: catch up if GC pause caused us to fall behind (prevents pop burst)
+    if(ar.nextNoteTime < ar.ctx.currentTime - 0.05){
+      ar.nextNoteTime = ar.ctx.currentTime + 0.01;
+    }
+    while(ar.nextNoteTime < ar.ctx.currentTime + DeviceComp.lookahead){
       const beat=ar.current16thNote;
       const spb=60.0/((ar.lockedBpm||ar.bpm)*ar.warpMultiplier);
       let time=ar.nextNoteTime;
@@ -1872,7 +1920,7 @@ function App(){
       scheduleNote(beat,time);
       ar.nextNoteTime+=0.25*spb;ar.current16thNote=(beat+1)%ar.stepsPerMeasure;
     }
-    ar.timerID=setTimeout(scheduler,18);
+    ar.timerID=setTimeout(scheduler, DeviceComp.timerMs);
   };
 
   // -- CANVAS: Munker-White + waveform + orbs --------------------------------
@@ -2195,10 +2243,8 @@ function App(){
         <span className="text-[8px] bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full">{meterLabel} . {subLabel[subdivisions]||subdivisions+'div'}</span>
         <span className="text-[8px] bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full">{scaleMode}</span>
         <span className="text-[8px] bg-slate-800 text-cyan-400 border border-cyan-900 px-2 py-0.5 rounded-full">Brain {Math.round(brainQ*100)}%</span>
+        <span className="text-[8px] bg-slate-800 text-slate-500 border border-slate-700 px-2 py-0.5 rounded-full" title={`Device score: ${DeviceComp.score.toFixed(2)} | Lookahead: ${DeviceComp.lookahead.toFixed(2)}s | Max BPM: ${DeviceComp.maxBpm}`}>⚙ {DeviceComp.label}</span>
         {learningMode!=='none'&&<span className={"text-[8px] px-2 py-0.5 rounded-full border "+(learningMode==='chaos'?'bg-cyan-500/10 text-cyan-300 border-cyan-800':learningMode==='progression'?'bg-purple-500/10 text-purple-300 border-purple-800':'bg-amber-500/10 text-amber-300 border-amber-800')}>{learningMode==='chaos'?'⚡ Cross-Sense':learningMode==='progression'?'◈ Prog Mem':'∿ Converge'}{learningMode==='convergence'?' '+convergenceScore+'%':''}</span>}
-        {smellData&&<span className="text-[8px] bg-emerald-500/10 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-full">◉ {smellData.dominant_element} {smellData.dominant_logic}</span>}
-        {techData&&<span className="text-[8px] bg-violet-500/10 text-violet-300 border border-violet-800 px-2 py-0.5 rounded-full">⬡ {techData.grade}</span>}
-        {windingData&&<span className="text-[8px] bg-rose-500/10 text-rose-300 border border-rose-800 px-2 py-0.5 rounded-full">∞ W{windingData.total_winding||0}</span>}
       </div>
     </header>
 
@@ -2378,7 +2424,7 @@ function App(){
           {[
             {l:'Chaos',c:'text-cyan-400',v:Math.round(chaos*100)+'%',min:0,max:1,step:.01,val:chaos,set:setChaos,f:true},
             {l:'Density',c:'text-purple-400',v:Math.round(density*100)+'%',min:0,max:1,step:.01,val:density,set:setDensity,f:true},
-            {l:'Tempo',c:'text-slate-400',v:bpm+' BPM',min:40,max:240,step:1,val:bpm,set:setBpm,f:false},
+            {l:'Tempo',c:'text-slate-400',v:bpm+' BPM (max '+DeviceComp.maxBpm+')',min:40,max:DeviceComp.maxBpm,step:1,val:Math.min(bpm,DeviceComp.maxBpm),set:setBpm,f:false},
             {l:'Swing',c:'text-amber-400',v:swing+'%',min:0,max:100,step:1,val:swing,set:setSwing,f:false},
           ].map(({l,c,v,min,max,step,val,set,f})=>(
             <div key={l}>
@@ -2583,6 +2629,11 @@ function App(){
           <div className="bg-slate-900/60 rounded-lg p-2">
             <div className="text-slate-600 uppercase text-[7px] mb-0.5">Neural Bass</div>
             <div className="text-cyan-400 font-black text-lg">{Math.round(Math.min(100,bassBrain.history.length/32*100))}%</div>
+          </div>
+          <div className="bg-slate-900/60 rounded-lg p-2 col-span-3">
+            <div className="text-slate-600 uppercase text-[7px] mb-0.5">Chord Voicings Learned</div>
+            <div className="flex flex-wrap gap-1 mt-1">{Object.entries(brain.voicingMem).filter(([,v])=>v.length>0).map(([ct,pool])=>(<span key={ct} className="text-[7px] bg-purple-500/10 text-purple-300 border border-purple-500/20 px-1.5 py-0.5 rounded font-mono">{ct}:{pool.length}</span>))}</div>
+            {Object.keys(brain.voicingMem).length===0&&<div className="text-[8px] text-slate-600 mt-1">Play for a few measures to start learning voicings.</div>}
           </div>
         </div>
       </div>
