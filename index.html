@@ -1,4 +1,364 @@
 <!DOCTYPE html>
-<html><head><meta http-equiv="refresh" content="0;url=sim3colts.html"></head>
-<body><a href="sim3colts.html">→ sim3colts</a></body>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Beyond Bound — Five Senses Deep Learning</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@700;800&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#020308;font-family:'Space Mono',monospace;overflow:hidden;min-height:100vh;}
+canvas#bg{position:fixed;inset:0;z-index:0;}
+
+/* SPLASH LAYER */
+#splash{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;}
+
+.title-block{text-align:center;margin-bottom:32px;}
+.title{font-family:'Syne',sans-serif;font-size:clamp(22px,6vw,42px);font-weight:800;letter-spacing:0.08em;
+  background:linear-gradient(120deg,#22d3ee,#a855f7,#22d3ee);background-size:200%;
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  animation:shimmer 4s linear infinite;}
+@keyframes shimmer{0%{background-position:0%}100%{background-position:200%}}
+.subtitle{font-size:9px;color:#1e3a4a;letter-spacing:0.3em;text-transform:uppercase;margin-top:6px;}
+.tagline{font-size:8px;color:#0f2a3a;letter-spacing:0.2em;text-transform:uppercase;margin-top:4px;}
+
+/* SIM CARDS GRID */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;width:100%;max-width:480px;}
+.card{
+  border-radius:14px;border:1px solid;padding:16px 14px;cursor:pointer;
+  background:rgba(5,8,20,0.85);backdrop-filter:blur(12px);
+  transition:all 0.2s;position:relative;overflow:hidden;
+  text-decoration:none;display:block;
+}
+.card:active{transform:scale(0.97);}
+.card::before{content:'';position:absolute;inset:0;opacity:0;transition:opacity 0.2s;}
+.card:active::before{opacity:1;}
+
+.card-vision  {border-color:rgba(34,211,238,0.25);}
+.card-vision::before{background:radial-gradient(circle at 50% 50%,rgba(34,211,238,0.08),transparent);}
+.card-sound   {border-color:rgba(168,85,247,0.25);}
+.card-sound::before{background:radial-gradient(circle at 50% 50%,rgba(168,85,247,0.08),transparent);}
+.card-smell   {border-color:rgba(100,255,180,0.25);}
+.card-smell::before{background:radial-gradient(circle at 50% 50%,rgba(100,255,180,0.08),transparent);}
+.card-touch   {border-color:rgba(245,158,11,0.25);}
+.card-touch::before{background:radial-gradient(circle at 50% 50%,rgba(245,158,11,0.08),transparent);}
+.card-deep    {border-color:rgba(99,102,241,0.25);}
+.card-deep::before{background:radial-gradient(circle at 50% 50%,rgba(99,102,241,0.08),transparent);}
+
+.card-wide{grid-column:1/-1;}
+
+.sense-label{font-size:7px;letter-spacing:0.25em;text-transform:uppercase;margin-bottom:6px;font-weight:700;}
+.card-vision  .sense-label{color:#22d3ee;}
+.card-sound   .sense-label{color:#a855f7;}
+.card-smell   .sense-label{color:#64ffb4;}
+.card-touch   .sense-label{color:#f59e0b;}
+.card-deep    .sense-label{color:#6366f1;}
+
+.card-title{font-family:'Syne',sans-serif;font-size:15px;font-weight:800;color:#fff;letter-spacing:0.04em;margin-bottom:4px;}
+.card-desc{font-size:7px;color:#334155;letter-spacing:0.1em;text-transform:uppercase;line-height:1.6;}
+
+.status-dot{
+  position:absolute;top:12px;right:12px;
+  width:7px;height:7px;border-radius:50%;background:#0f2a3a;
+  transition:all 0.5s;
+}
+.status-dot.live{background:#22d3ee;box-shadow:0 0 8px #22d3ee;}
+.status-dot.live.purple{background:#a855f7;box-shadow:0 0 8px #a855f7;}
+.status-dot.live.green{background:#64ffb4;box-shadow:0 0 8px #64ffb4;}
+.status-dot.live.amber{background:#f59e0b;box-shadow:0 0 8px #f59e0b;}
+.status-dot.live.indigo{background:#6366f1;box-shadow:0 0 8px #6366f1;}
+
+.live-stat{font-size:7px;margin-top:8px;font-family:'Space Mono',monospace;}
+.card-vision .live-stat{color:rgba(34,211,238,0.5);}
+.card-sound  .live-stat{color:rgba(168,85,247,0.5);}
+.card-smell  .live-stat{color:rgba(100,255,180,0.5);}
+.card-touch  .live-stat{color:rgba(245,158,11,0.5);}
+.card-deep   .live-stat{color:rgba(99,102,241,0.5);}
+
+.genesis-bar{
+  width:100%;max-width:480px;margin-top:14px;
+  background:rgba(5,8,20,0.85);border:1px solid rgba(255,255,255,0.05);
+  border-radius:10px;padding:10px 14px;
+  display:flex;align-items:center;gap:10px;
+}
+.genesis-label{font-size:7px;color:#1e3a4a;letter-spacing:0.2em;text-transform:uppercase;white-space:nowrap;}
+.genesis-nodes{display:flex;gap:6px;flex:1;align-items:center;}
+.gnode{
+  font-size:7px;padding:2px 7px;border-radius:20px;border:1px solid;
+  letter-spacing:0.1em;text-transform:uppercase;transition:all 0.5s;
+  color:#0f2233;border-color:#0f2233;
+}
+.gnode.live{color:#22d3ee;border-color:rgba(34,211,238,0.4);background:rgba(34,211,238,0.05);}
+.gnode.live.purple{color:#a855f7;border-color:rgba(168,85,247,0.4);background:rgba(168,85,247,0.05);}
+.gnode.live.green{color:#64ffb4;border-color:rgba(100,255,180,0.4);background:rgba(100,255,180,0.05);}
+.gnode.live.amber{color:#f59e0b;border-color:rgba(245,158,11,0.4);background:rgba(245,158,11,0.05);}
+.gnode.live.indigo{color:#6366f1;border-color:rgba(99,102,241,0.4);background:rgba(99,102,241,0.05);}
+
+@keyframes fade-in{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+.title-block{animation:fade-in 0.6s ease-out;}
+.grid{animation:fade-in 0.7s ease-out 0.1s both;}
+.genesis-bar{animation:fade-in 0.7s ease-out 0.2s both;}
+</style>
+</head>
+<body>
+
+<canvas id="bg"></canvas>
+
+<div id="splash">
+  <div class="title-block">
+    <div class="title">BEYOND BOUND</div>
+    <div class="subtitle">Five Senses Deep Learning Environment</div>
+    <div class="tagline">Every sense feeds the brain · Every session teaches</div>
+  </div>
+
+  <div class="grid">
+    <!-- VISION -->
+    <a class="card card-vision" href="sim3colts.html">
+      <div class="status-dot" id="dot-sim3"></div>
+      <div class="sense-label">Sense 1 · Vision</div>
+      <div class="card-title">SIM3COLTS</div>
+      <div class="card-desc">Boundary sim · V1 V2 V3 · Museum</div>
+      <div class="live-stat" id="stat-sim3">—</div>
+    </a>
+
+    <!-- SOUND -->
+    <a class="card card-sound" href="ai_band.html">
+      <div class="status-dot" id="dot-band"></div>
+      <div class="sense-label">Sense 2 · Sound</div>
+      <div class="card-title">LIVE AI BAND</div>
+      <div class="card-desc">Neural bass · Phrase memory · Collective brain</div>
+      <div class="live-stat" id="stat-band">—</div>
+    </a>
+
+    <!-- SMELL -->
+    <a class="card card-smell" href="smell_sim.html">
+      <div class="status-dot" id="dot-smell"></div>
+      <div class="sense-label">Sense 3 · Smell</div>
+      <div class="card-title">OLFACTORY</div>
+      <div class="card-desc">Chemoreceptor · Diffusion engine</div>
+      <div class="live-stat" id="stat-smell">—</div>
+    </a>
+
+    <!-- DEEP LEARNING -->
+    <a class="card card-deep" href="sim3colts_deep_learning.html">
+      <div class="status-dot" id="dot-tech"></div>
+      <div class="sense-label">Sense 4 · Atomic</div>
+      <div class="card-title">DEEP LEARNING</div>
+      <div class="card-desc">Molecular testbed · Atomic engine</div>
+      <div class="live-stat" id="stat-tech">—</div>
+    </a>
+
+    <!-- NEXT APP STARTER — full width -->
+    <a class="card card-touch card-wide" href="next_app_starter.html">
+      <div class="status-dot" id="dot-next"></div>
+      <div class="sense-label">Sense 5 · Touch · Coming Soon</div>
+      <div class="card-title">NEXT APP</div>
+      <div class="card-desc">Tactile layer · Haptic feedback · Winding room</div>
+      <div class="live-stat" id="stat-next">—</div>
+    </a>
+  </div>
+
+  <!-- GENESIS BRAIN STATUS BAR -->
+  <div class="genesis-bar">
+    <div class="genesis-label">Genesis Brain</div>
+    <div class="genesis-nodes">
+      <div class="gnode" id="gn-sim3">sim3</div>
+      <div class="gnode purple" id="gn-band">band</div>
+      <div class="gnode green" id="gn-smell">smell</div>
+      <div class="gnode indigo" id="gn-tech">tech</div>
+      <div class="gnode amber" id="gn-next">touch</div>
+    </div>
+    <div style="font-size:7px;color:#0f2233;letter-spacing:0.15em;" id="gb-chaos">CHAOS —</div>
+  </div>
+</div>
+
+<!-- BACKGROUND PARTICLE CANVAS -->
+<script>
+const canvas = document.getElementById('bg');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+window.addEventListener('resize', resize); resize();
+
+// 5 clusters of particles — one per sense
+const SENSE_COLORS = ['#22d3ee','#a855f7','#64ffb4','#6366f1','#f59e0b'];
+const particles = [];
+for (let s = 0; s < 5; s++) {
+  const cx = (0.15 + s * 0.18) * window.innerWidth;
+  const cy = 0.4 * window.innerHeight + (s % 2 === 0 ? -60 : 60);
+  for (let i = 0; i < 12; i++) {
+    particles.push({
+      x: cx + (Math.random()-0.5)*120,
+      y: cy + (Math.random()-0.5)*120,
+      vx: (Math.random()-0.5)*0.4,
+      vy: (Math.random()-0.5)*0.4,
+      r: 1 + Math.random()*2,
+      col: SENSE_COLORS[s],
+      alpha: 0.1 + Math.random()*0.25,
+      sense: s,
+      trail: []
+    });
+  }
+}
+
+// Connecting lines between particles of same sense
+function drawFrame() {
+  ctx.fillStyle = 'rgba(2,3,8,0.22)';
+  ctx.fillRect(0,0,W,H);
+
+  for (const p of particles) {
+    p.trail.push({x:p.x,y:p.y});
+    if (p.trail.length > 18) p.trail.shift();
+    p.x += p.vx; p.y += p.vy;
+    if (p.x < 0 || p.x > W) p.vx *= -1;
+    if (p.y < 0 || p.y > H) p.vy *= -1;
+
+    if (p.trail.length > 1) {
+      for (let i = 1; i < p.trail.length; i++) {
+        const a = (i / p.trail.length) * p.alpha * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(p.trail[i-1].x, p.trail[i-1].y);
+        ctx.lineTo(p.trail[i].x, p.trail[i].y);
+        ctx.strokeStyle = p.col;
+        ctx.globalAlpha = a;
+        ctx.lineWidth = 0.6;
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = p.alpha;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+    ctx.fillStyle = p.col;
+    ctx.shadowBlur = 8; ctx.shadowColor = p.col;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // Lines between nearby same-sense particles
+  for (let i = 0; i < particles.length; i++) {
+    for (let j = i+1; j < particles.length; j++) {
+      if (particles[i].sense !== particles[j].sense) continue;
+      const dx = particles[i].x - particles[j].x;
+      const dy = particles[i].y - particles[j].y;
+      const d = Math.sqrt(dx*dx+dy*dy);
+      if (d < 90) {
+        ctx.beginPath();
+        ctx.moveTo(particles[i].x, particles[i].y);
+        ctx.lineTo(particles[j].x, particles[j].y);
+        ctx.strokeStyle = particles[i].col;
+        ctx.globalAlpha = (1 - d/90) * 0.08;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
+    }
+  }
+  ctx.globalAlpha = 1;
+  requestAnimationFrame(drawFrame);
+}
+drawFrame();
+
+// ── GENESIS BRAIN LIVE STATUS ──────────────────────────────────────────
+const SB_URL = 'https://xoolmbmnzbsvcqeyqvyi.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhvb2xtYm1uemJzdmNleXhxdnlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDMwNDQsImV4cCI6MjA4NzAxOTA0NH0.ebTwMZ_byU6EXtuR0jynct64QO5ornQrCwElQ5b9TxQ';
+const HDRS = {'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
+
+const lastSeen = {sim3:0,band:0,smell:0,tech:0};
+const TIMEOUT = 8000; // 8s = offline
+
+function setLive(ns, live, statText) {
+  const colorMap = {sim3:'',band:'purple',smell:'green',tech:'indigo',next:'amber'};
+  const dotEl = document.getElementById('dot-'+ns);
+  const gnEl  = document.getElementById('gn-'+ns);
+  const statEl = document.getElementById('stat-'+ns);
+  if (dotEl) { dotEl.className = 'status-dot' + (live ? ' live '+(colorMap[ns]||'') : ''); }
+  if (gnEl)  { gnEl.className  = 'gnode '+(colorMap[ns]||'') + (live ? ' live' : ''); }
+  if (statEl && statText) statEl.textContent = statText;
+}
+
+// Poll every 5s for initial state + reconnect fallback
+async function pollState() {
+  try {
+    const r = await fetch(SB_URL+'/rest/v1/genesis_brain?select=namespace,payload,version&order=version.desc&limit=20', {headers:HDRS});
+    const rows = await r.json();
+    if (!Array.isArray(rows)) return;
+    const latest = {};
+    rows.forEach(row => { if (!latest[row.namespace]) latest[row.namespace] = row; });
+
+    if (latest.sim3) {
+      const p = latest.sim3.payload;
+      setLive('sim3', true, `chaos ${(p?.chaos_ratio||0).toFixed(2)} · ${p?.balls?.length||0} balls`);
+      document.getElementById('gb-chaos').textContent = 'CHAOS '+((p?.chaos_ratio||0).toFixed(2));
+    }
+    if (latest.band) {
+      const p = latest.band.payload;
+      setLive('band', true, `${p?.bpm||0}bpm · ${(p?.chord_type||'?').toUpperCase()} · n=${p?.n||0}`);
+    }
+    if (latest.smell) {
+      const p = latest.smell.payload;
+      setLive('smell', true, `${p?.dominant_element||'?'} · ${p?.dominant_logic||'?'} · ${(p?.synthesis_level||0).toFixed(2)}`);
+    }
+    if (latest.tech) {
+      const p = latest.tech.payload;
+      setLive('tech', true, `${p?.grade||'?'} · ${p?.atomCount||0} atoms · chaos ${((p?.chaos||0)*100).toFixed(0)}%`);
+    }
+  } catch(e) {}
+}
+
+// WebSocket for live updates
+const wsUrl = SB_URL.replace('https://','wss://')+`/realtime/v1/websocket?apikey=${SB_KEY}&vsn=1.0.0`;
+const ws = new WebSocket(wsUrl);
+ws.onopen = () => {
+  ws.send(JSON.stringify({
+    topic:'realtime:public:genesis_brain',event:'phx_join',
+    payload:{config:{broadcast:{self:false},presence:{key:''},
+      postgres_changes:[{event:'*',schema:'public',table:'genesis_brain'}]}},
+    ref:'splash-1'
+  }));
+  setInterval(()=>{ if(ws.readyState===1) ws.send(JSON.stringify({topic:'phoenix',event:'heartbeat',payload:{},ref:null})); },25000);
+};
+ws.onmessage = (e) => {
+  try {
+    const msg = JSON.parse(e.data);
+    const rec = msg?.payload?.data?.record || msg?.payload?.data?.new || msg?.payload?.record;
+    if (!rec?.namespace) return;
+    lastSeen[rec.namespace] = Date.now();
+    const p = rec.payload || {};
+
+    if (rec.namespace === 'sim3') {
+      setLive('sim3', true, `chaos ${(p.chaos_ratio||0).toFixed(2)} · ${p.balls?.length||0} balls`);
+      document.getElementById('gb-chaos').textContent = 'CHAOS '+((p.chaos_ratio||0).toFixed(2));
+      // Animate particles for vision sense
+      particles.filter(pt=>pt.sense===0).forEach(pt=>{ pt.vx += (Math.random()-0.5)*0.3*(p.chaos_ratio||1)*0.1; pt.vy += (Math.random()-0.5)*0.3*(p.chaos_ratio||1)*0.1; });
+    }
+    if (rec.namespace === 'band') {
+      setLive('band', true, `${p.bpm||0}bpm · ${(p.chord_type||'?').toUpperCase()}`);
+      particles.filter(pt=>pt.sense===1).forEach(pt=>{ pt.vx *= 1.05; pt.vy *= 1.05; });
+    }
+    if (rec.namespace === 'smell') {
+      setLive('smell', true, `${p.dominant_element||'?'} · synth ${(p.synthesis_level||0).toFixed(2)}`);
+    }
+    if (rec.namespace === 'tech') {
+      setLive('tech', true, `${p.grade||'?'} · ${p.atomCount||0} atoms`);
+    }
+    if (rec.namespace === 'band_brain') {
+      // Brain learning — pulse all particles briefly
+      particles.forEach(pt=>{ pt.alpha = Math.min(0.6, pt.alpha + 0.15); setTimeout(()=>{ pt.alpha = Math.max(0.1, pt.alpha - 0.15); }, 800); });
+    }
+  } catch(_) {}
+};
+
+// Offline detection
+setInterval(() => {
+  const now = Date.now();
+  ['sim3','band','smell','tech'].forEach(ns => {
+    if (lastSeen[ns] && now - lastSeen[ns] > TIMEOUT) setLive(ns, false, 'offline');
+  });
+}, 3000);
+
+// Initial poll
+pollState();
+setInterval(pollState, 15000);
+</script>
+</body>
 </html>
