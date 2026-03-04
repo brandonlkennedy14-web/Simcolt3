@@ -161,8 +161,14 @@
             🏛️ VIEW MUSEUM — All Discovered Structures
         </button>
 
-        <div style="margin-top:20px;font-size:10px;color:#334155;font-family:monospace;">
+        <div style="margin-top:16px;font-size:10px;color:#334155;font-family:monospace;">
             Both versions share the same Supabase museum · Knowledge is never lost
+        </div>
+        <div id="splash-contributor" style="margin-top:10px;padding:8px 12px;border-radius:8px;background:rgba(20,184,166,0.06);border:1px solid rgba(20,184,166,0.2);font-size:9px;font-family:monospace;color:#475569;text-align:left;">
+            <span style="color:#14b8a6;">◈ CONTRIBUTOR</span>
+            <span id="splash-session-id" style="margin-left:8px;color:#334155;"></span>
+            <span style="margin-left:12px;">Discoveries: <span id="splash-disc-count" style="color:#a855f7;">0</span></span>
+            <span style="margin-left:12px;">Total ticks: <span id="splash-tick-count" style="color:#38bdf8;">0</span></span>
         </div>
     </div>
 </div>
@@ -274,6 +280,7 @@
                         <span>INV: <span id="v3-stat-inv" style="color:#38bdf8;">0</span></span>
                         <span>MUSEUM: <span id="v3-stat-museum" style="color:#14b8a6;">0</span></span>
                         <span>TICKS: <span id="v3-stat-ticks" style="color:#94a3b8;">0</span></span>
+                        <span>λ: <span id="v3-stat-nm" style="color:#eab308;">—nm</span></span>
                     </div>
                 </div>
                 <div style="display:flex;gap:12px;align-items:center;">
@@ -325,6 +332,64 @@
     const sharedKnownHashes = new Set(); // both versions share this in-memory set
     let sharedDbConnected = false;
 
+    // ── SESSION IDENTITY — persistent across reloads, never resets ──
+    // Each browser gets a unique contributor ID in localStorage forever.
+    // WHO found what accumulates — sessions are never wiped.
+    let SESSION_ID = localStorage.getItem('sim3_session_id');
+    if (!SESSION_ID) {
+        SESSION_ID = 'usr_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
+        localStorage.setItem('sim3_session_id', SESSION_ID);
+    }
+    let SESSION_DISCOVERIES = parseInt(localStorage.getItem('sim3_discoveries') || '0');
+    let SESSION_TICKS_TOTAL = parseInt(localStorage.getItem('sim3_ticks_total') || '0');
+    function saveSessionProgress(newDisc, addTicks) {
+        SESSION_DISCOVERIES += newDisc;
+        SESSION_TICKS_TOTAL += addTicks;
+        localStorage.setItem('sim3_discoveries', SESSION_DISCOVERIES);
+        localStorage.setItem('sim3_ticks_total', SESSION_TICKS_TOTAL);
+    }
+    console.log('[sim3] Session:', SESSION_ID, '|', SESSION_DISCOVERIES, 'discoveries |', SESSION_TICKS_TOTAL, 'ticks');
+
+    // ── WAVELENGTH → COLOUR MAPPING ──
+    // The 7 ball colors = 7 canonical visible light wavelength bands.
+    // This is the scientific basis of the Munker-White overlay:
+    // the 1px black lines create simultaneous contrast ACROSS spectral neighbors,
+    // mimicking how V4/V1 cortex processes opponency — not just brightness but hue shift.
+    // Winding number correlates to oscillation frequency → shorter wavelength at high winding.
+    //
+    //   groupId 0 → 620-750nm → RED    (#ef4444)
+    //   groupId 1 → 590-620nm → ORANGE (#f97316)
+    //   groupId 2 → 570-590nm → YELLOW (#eab308)
+    //   groupId 3 → 495-570nm → GREEN  (#22c55e)
+    //   groupId 4 → 450-495nm → BLUE   (#3b82f6)
+    //   groupId 5 → 420-450nm → INDIGO (#4f46e5)
+    //   groupId 6 → 380-420nm → VIOLET (#a855f7)
+    const WAVELENGTH_MAP = [
+        { groupId:0, nmLo:620, nmHi:750, label:'RED',    hex:'#ef4444' },
+        { groupId:1, nmLo:590, nmHi:620, label:'ORANGE', hex:'#f97316' },
+        { groupId:2, nmLo:570, nmHi:590, label:'YELLOW', hex:'#eab308' },
+        { groupId:3, nmLo:495, nmHi:570, label:'GREEN',  hex:'#22c55e' },
+        { groupId:4, nmLo:450, nmHi:495, label:'BLUE',   hex:'#3b82f6' },
+        { groupId:5, nmLo:420, nmHi:450, label:'INDIGO', hex:'#4f46e5' },
+        { groupId:6, nmLo:380, nmHi:420, label:'VIOLET', hex:'#a855f7' },
+    ];
+    function windingToWavelength(winding) {
+        const absW = Math.abs(winding);
+        const group = Math.floor(absW) % 7;
+        const frac = absW - Math.floor(absW);
+        const band = WAVELENGTH_MAP[group];
+        const next = WAVELENGTH_MAP[(group + 1) % 7];
+        const nm = band.nmHi - frac * (band.nmHi - next.nmLo);
+        return { nm: Math.round(nm), label: band.label, hex: band.hex };
+    }
+    // Dominant wavelength for current sim state — used in museum logging + GenesisBrain
+    function getDominantWavelength(balls) {
+        if (!balls || !balls.length) return WAVELENGTH_MAP[0];
+        // Find ball with highest |winding| — that's the dominant frequency
+        const dominant = balls.reduce((a, b) => Math.abs(a.winding) > Math.abs(b.winding) ? a : b);
+        return windingToWavelength(dominant.winding);
+    }
+
     // Genesis Brain — use shared module to publish sim3 state
     // Rate-limited to 2 writes/sec; all other apps receive via WS push instantly
     let _gbLast = 0;
@@ -340,6 +405,13 @@
         GenesisBrain.connect().then(() => {
             console.log('[sim3colts] GenesisBrain connected');
         });
+        // Show contributor stats on splash
+        const el_id = document.getElementById('splash-session-id');
+        const el_disc = document.getElementById('splash-disc-count');
+        const el_tick = document.getElementById('splash-tick-count');
+        if (el_id) el_id.textContent = SESSION_ID.slice(0, 18) + '...';
+        if (el_disc) el_disc.textContent = SESSION_DISCOVERIES;
+        if (el_tick) el_tick.textContent = SESSION_TICKS_TOTAL.toLocaleString();
     });
 
     // Load museum hashes once, shared by both versions
@@ -348,7 +420,7 @@
             if (error) {
                 // Museum table may not exist yet — sim still runs, just won't skip known configs
                 console.warn('Museum load failed (table may need creating):', error.message);
-                console.info('Run in Supabase SQL Editor: CREATE TABLE IF NOT EXISTS museum (hash text primary key, chaos_ratio text, tick_detected bigint, inversions int, version text, scan_level int, exclusion_dist int, trail_len int, parent_hash text, boundary_type text, winding_signature text, discovery_bounds text, created_at timestamptz default now()); -- Also run: ALTER TABLE museum ADD COLUMN IF NOT EXISTS boundary_type text; ALTER TABLE museum ADD COLUMN IF NOT EXISTS winding_signature text; ALTER TABLE museum ADD COLUMN IF NOT EXISTS discovery_bounds text;');
+                console.info('Run in Supabase SQL Editor: CREATE TABLE IF NOT EXISTS museum (hash text primary key, chaos_ratio text, tick_detected bigint, inversions int, version text, scan_level int, exclusion_dist int, trail_len int, parent_hash text, boundary_type text, winding_signature text, discovery_bounds text, session_id text, dominant_nm int, dominant_wavelength text, created_at timestamptz default now()); -- Also run: ALTER TABLE museum ADD COLUMN IF NOT EXISTS boundary_type text; ALTER TABLE museum ADD COLUMN IF NOT EXISTS winding_signature text; ALTER TABLE museum ADD COLUMN IF NOT EXISTS discovery_bounds text; ALTER TABLE museum ADD COLUMN IF NOT EXISTS session_id text; ALTER TABLE museum ADD COLUMN IF NOT EXISTS dominant_nm int; ALTER TABLE museum ADD COLUMN IF NOT EXISTS dominant_wavelength text;');
             } else if (data) {
                 data.forEach(item => sharedKnownHashes.add(item.hash));
                 console.log(`Museum loaded: ${data.length} known configurations`);
@@ -522,6 +594,8 @@
                     ${r.scan_level ? `<span>SCAN <span style="color:#f59e0b;">Lv${r.scan_level}</span></span>` : ''}
                     ${r.parent_hash ? `<span style="color:#334155;">⬡ child</span>` : ''}
                     ${windParts ? `<span style="color:#334155;">W: <span style="color:#64748b;font-family:monospace;">${windParts}</span></span>` : ''}
+                    ${r.dominant_nm ? `<span style="color:#334155;">λ: <span style="color:${WAVELENGTH_MAP.find(w=>w.label===r.dominant_wavelength)?.hex||'#64748b'};font-family:monospace;">${r.dominant_nm}nm ${r.dominant_wavelength||''}</span></span>` : ''}
+                    ${r.session_id ? `<span style="color:#1e293b;font-size:8px;">by ${r.session_id.slice(0,14)}…</span>` : ''}
                     <span style="margin-left:auto;">${r.created_at ? new Date(r.created_at).toLocaleDateString() : ''}</span>
                 </div>
             </div>`;
@@ -919,6 +993,8 @@ function initV1() {
                 // Trajectory boundary snapshot: winding stats + path density
                 const windingStats = balls.map(b=>b.winding.toFixed(2)).join(',');
                 const boundaryType = simMode==='discovery'?'trajectory':'platonic';
+                const wl1=getDominantWavelength(balls);
+                saveSessionProgress(1, 0);
                 sharedSupabase.from('museum').upsert({
                     hash:currentEvolvedHash,
                     chaos_ratio:chaosRatio.toFixed(2),
@@ -927,7 +1003,10 @@ function initV1() {
                     version:'v1',
                     boundary_type: boundaryType,
                     winding_signature: windingStats,
-                    discovery_bounds: simMode==='discovery'?JSON.stringify(discoveryBounds):null
+                    discovery_bounds: simMode==='discovery'?JSON.stringify(discoveryBounds):null,
+                    session_id: SESSION_ID,
+                    dominant_nm: wl1.nm,
+                    dominant_wavelength: wl1.label
                 }).catch(e=>console.error(e));
             }
         }
@@ -948,7 +1027,10 @@ function initV1() {
             ticks: ticks,
             geo: currentGeoName,
             sim_mode: simMode,
-            version: 'v1'
+            version: 'v1',
+            dominant_nm: getDominantWavelength(balls).nm,
+            dominant_wavelength: getDominantWavelength(balls).label,
+            session_id: SESSION_ID
         });
         v1Loop = requestAnimationFrame(loop);
     }
@@ -1491,6 +1573,8 @@ function initV2() {
                 const boundaryType=simMode==='discovery'?'trajectory':'platonic';
                 showToast(scanLevel>1?'🔬':'🏛️',scanLevel>1?`Deep Scan Lv${scanLevel} Discovery`:boundaryType==='trajectory'?'Trajectory Boundary Found':'New Structure Found',hash.substring(0,32)+'...');
                 const windingStats=balls.map(b=>b.winding.toFixed(2)).join(',');
+                const wl2=getDominantWavelength(balls);
+                saveSessionProgress(1, 0);
                 sharedSupabase.from('museum').upsert({
                     hash,
                     chaos_ratio:chaosRatio.toFixed(2),
@@ -1503,7 +1587,10 @@ function initV2() {
                     parent_hash:scanParentHash||null,
                     boundary_type: boundaryType,
                     winding_signature: windingStats,
-                    discovery_bounds: simMode==='discovery'?JSON.stringify(discoveryBounds):null
+                    discovery_bounds: simMode==='discovery'?JSON.stringify(discoveryBounds):null,
+                    session_id: SESSION_ID,
+                    dominant_nm: wl2.nm,
+                    dominant_wavelength: wl2.label
                 }).catch(e=>console.error(e));
                 setTimeout(()=>triggerDeepScan(hash),200);
             }
@@ -1915,6 +2002,9 @@ function initV3() {
         // HUD stats
         document.getElementById('v3-stat-chaos').textContent=chaosRatio.toFixed(2);
         document.getElementById('v3-stat-ticks').textContent=ticks;
+        const wlLive=getDominantWavelength(balls);
+        const nmEl=document.getElementById('v3-stat-nm');
+        if(nmEl){nmEl.textContent=wlLive.nm+'nm '+wlLive.label;nmEl.style.color=wlLive.hex;}
     }
 
     function loop() {
@@ -1954,12 +2044,17 @@ function initV3() {
                 document.getElementById('v3-stat-museum').textContent=museumCount;
                 const windingStats=balls.map(b=>b.winding.toFixed(2)).join(',');
                 const boundaryType=simMode==='discovery'?'trajectory':'platonic';
+                const wl3=getDominantWavelength(balls);
+                saveSessionProgress(1, 0);
                 sharedSupabase.from('museum').upsert({
                     hash, chaos_ratio:chaosRatio.toFixed(2),
                     tick_detected:ticks, inversions, version:'v3',
                     boundary_type: boundaryType,
                     winding_signature: windingStats,
-                    discovery_bounds: simMode==='discovery'?JSON.stringify(discoveryBounds):null
+                    discovery_bounds: simMode==='discovery'?JSON.stringify(discoveryBounds):null,
+                    session_id: SESSION_ID,
+                    dominant_nm: wl3.nm,
+                    dominant_wavelength: wl3.label
                 }).catch(e=>console.error(e));
             }
         }
@@ -1970,7 +2065,10 @@ function initV3() {
                 x:(CENTER_X+b.x*baseScale)/width, y:(CENTER_Y+b.y*baseScale)/height,
                 vx:b.vx, vy:b.vy, winding:b.winding, color:b.color, type:b.type, groupId:b.groupId, glow:0
             })),
-            chaos_ratio:chaosRatio, inversions, ticks, geo:currentGeoName, sim_mode:simMode, version:'v3'
+            chaos_ratio:chaosRatio, inversions, ticks, geo:currentGeoName, sim_mode:simMode, version:'v3',
+            dominant_nm: getDominantWavelength(balls).nm,
+            dominant_wavelength: getDominantWavelength(balls).label,
+            session_id: SESSION_ID
         });
 
         v3Loop=requestAnimationFrame(loop);
@@ -1988,12 +2086,17 @@ function initV3() {
         const hash=generateHash();
         const windingStats=balls.map(b=>b.winding.toFixed(2)).join(',');
         sharedKnownHashes.add(hash);
+        const wlM=getDominantWavelength(balls);
+        saveSessionProgress(1, 0);
         sharedSupabase.from('museum').upsert({
             hash, chaos_ratio:chaosRatio.toFixed(2),
             tick_detected:ticks, inversions, version:'v3',
             boundary_type:'trajectory',
             winding_signature:windingStats,
-            discovery_bounds:JSON.stringify(discoveryBounds)
+            discovery_bounds:JSON.stringify(discoveryBounds),
+            session_id: SESSION_ID,
+            dominant_nm: wlM.nm,
+            dominant_wavelength: wlM.label
         }).then(()=>{
             const btn=document.getElementById('v3-museum-btn');
             if(btn){btn.textContent='✓ Saved!';btn.style.color='#34d399';setTimeout(()=>{btn.textContent='🏛 Send to Museum';btn.style.color='#14b8a6';},2000);}
