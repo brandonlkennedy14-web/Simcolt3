@@ -729,20 +729,32 @@ const motifEng=new MotifEngine();
 const DeviceComp = (() => {
   const cores = navigator.hardwareConcurrency || 2;
   const mem   = navigator.deviceMemory || 4;
+  // Real stress test -- mix of float math, memory access, branching
+  // Same work a synth does: trig, sqrt, array writes
   const t0    = performance.now();
-  let _x = 0; for(let i=0;i<50000;i++) _x += Math.sqrt(i);
+  let _x = 0;
+  const _buf = new Float32Array(4096);
+  for(let i=0;i<200000;i++){
+    _x += Math.sqrt(i) * Math.sin(i * 0.001);
+    _buf[i & 4095] = _x * 0.0001;
+  }
   const bench = performance.now() - t0;
+  // bench: fast device ~8ms, mid ~25ms, weak phone ~80ms+
   const coreScore = Math.min(1, (cores - 2) / 6);
   const memScore  = Math.min(1, (mem  - 1) / 7);
-  const perfScore = Math.max(0, Math.min(1, 1 - (bench - 2) / 18));
+  const perfScore = Math.max(0, Math.min(1, 1 - (bench - 8) / 80));
   const score     = coreScore*0.3 + memScore*0.3 + perfScore*0.4;
   console.log(`[DeviceComp] score=${score.toFixed(2)} cores=${cores} mem=${mem}GB bench=${bench.toFixed(1)}ms`);
+  // Weak device = schedule FURTHER ahead so GC/browser pauses can't starve audio
+  // Strong device = schedule closer, lower latency
+  // This is the core of the "send to the past" trick:
+  // notes are already in the AudioContext queue before JS even runs again
   return {
     score,
-    get lookahead() { return 0.35 - score * 0.23; },
-    get catchUp()   { return 0.5  - score * 0.35; },
+    get lookahead() { return 0.80 - score * 0.60; }, // weak=0.80s, strong=0.20s
+    get catchUp()   { return 0.80 - score * 0.65; }, // weak=0.80s, strong=0.15s
     get maxBpm()    { return Math.round(145 + score * 95); },
-    get timerMs()   { return Math.round(8 + (1-score) * 22); },
+    get timerMs()   { return Math.round(25 - score * 17); }, // weak=25ms, strong=8ms
     get maxLayers() { return Math.round(3 + score * 3); },
     label: score > 0.65 ? 'strong' : score > 0.35 ? 'mid' : 'weak',
   };
@@ -1273,7 +1285,8 @@ function synthMid(ctx,t,notes,chordType,chaos,warp,dest,windBoost=0){
   // Envelope shape: attack and sustain vary per hit
   const atkT=(0.025+s.decay*0.04)/warp;
   const susT=(0.95+s.tone*0.45+windBoost*0.3)/warp;
-  notes.slice(0,5).forEach((note,idx)=>{
+  const maxVoices=DeviceComp.score<0.35?2:DeviceComp.score<0.55?3:5;
+  notes.slice(0,maxVoices).forEach((note,idx)=>{
     const freq=440*Math.pow(2,(note-69)/12)*warp;
     // Each voice in the chord gets slightly different character
     const vSeed=s.color+idx*0.13;
@@ -1321,7 +1334,8 @@ function synthLead(ctx,t,note,chaos,warp,dest,windBoost=0){
   // Duration: varies per hit -- short stabs vs longer sustains
   const durT=(0.25+s.tone*0.55+windBoost*0.2+chaos*0.3)/warp;
   // Oscillator count: 2-4 voices based on chaos + seed
-  const voiceCount=2+Math.floor(s.punch*2+chaos*1.5);
+  const maxLeadVoices=DeviceComp.score<0.4?2:4;
+  const voiceCount=Math.min(maxLeadVoices,2+Math.floor(s.punch*2+chaos*1.5));
   // Detune spread: wider = fatter, varies per note
   const detuneSpread=5+s.color*18+chaos*12;
   // Waveform: varies with chaos and seed
@@ -1874,6 +1888,14 @@ function App(){
     if(AR.current.ctx.state==='suspended')await AR.current.ctx.resume();
     bus.init(AR.current.ctx);
     setIsPlaying(true);isPlayRef.current=true;
+    // Set up high-priority MessageChannel scheduler (not throttled on mobile)
+    if(!AR.current._schedMsg){
+      const mc=new MessageChannel();
+      AR.current._schedMsg=mc;
+      mc.port2.onmessage=function(){
+        if(isPlayRef.current)scheduler();
+      };
+    }
     AR.current.nextNoteTime=AR.current.ctx.currentTime+0.08;
     scheduler();hap.tap();
     addLog('Band active.');
@@ -1885,6 +1907,7 @@ function App(){
     bus.init(AR.current.ctx);
     if(isPlaying){
       clearTimeout(AR.current.timerID);
+      if(AR.current._schedMsg)AR.current._schedMsg.port2.onmessage=null;
       setIsPlaying(false);isPlayRef.current=false;
       try{await db.from('athematic_history').insert([{chaos,density,swing,bpm,timeSignature,rootMidi:AR.current.rootMidi}]);}catch(e){} collectiveBrainSave();
       hap.restart();
@@ -2020,7 +2043,7 @@ function App(){
 
     // -- MID ---------------------------------------------------------------
     if(!sup.mid&&!mutes.mid&&midOpts.length){
-      const prob=beat===0?1:chaos*0.55*(hist.m?0.08:1.9);
+      const prob=beat===0?(DeviceComp.score<0.35?0.6:1):chaos*0.55*(hist.m?0.08:1.9)*(DeviceComp.score<0.4?0.6:1.0);
       if(Math.random()<prob){
         // Check if brain has a learned voicing for this chord -- use it 40% of the time
         const learnedVoicing=brain.suggestVoicing(chordType);
@@ -2039,7 +2062,7 @@ function App(){
 
     // -- LEAD -------------------------------------------------------------
     if(!sup.lead&&!mutes.lead&&leadOpts.length){
-      const prob=density*(hist.l?0.14:1.6)*0.65;
+      const prob=density*(hist.l?0.14:1.6)*0.65*(DeviceComp.score<0.4?0.5:1.0);
       if(Math.random()<prob){
         const iv=brain.choose(userRole,leadOpts,chaos,chordType);
         synthLead(ctx,time,rootMidi+iv,chaos,warpMultiplier,bus.getInput('lead'),voices.lead.winding*0.07);
@@ -2072,13 +2095,19 @@ function App(){
       scheduleNote(beat,time);
       ar.nextNoteTime+=0.25*spb;ar.current16thNote=(beat+1)%ar.stepsPerMeasure;
     }
-    ar.timerID=setTimeout(scheduler, DeviceComp.timerMs);
+    // MessageChannel fires at near-audio priority, not throttled by mobile browser
+    // This is the standard trick used by Tone.js and other audio libs
+    ar._schedMsg.port1.postMessage(0);
   };
 
   // -- CANVAS: Munker-White + waveform + orbs --------------------------------
   useEffect(()=>{
     let frame=0,onsetRate=0;
+    const fpsLimit=DeviceComp.score<0.35?2:DeviceComp.score<0.55?1:0; // skip frames
+    let frameSkip=0;
     const renderLoop=()=>{
+      frameSkip++;
+      if(fpsLimit>0&&frameSkip%( fpsLimit+1)!==0){requestRef.current=requestAnimationFrame(renderLoop);return;}
       frame++;
       const canvas=canvasRef.current;
       if(!canvas){requestRef.current=requestAnimationFrame(renderLoop);return;}
@@ -2163,8 +2192,8 @@ function App(){
         c.fillStyle=phase<0.06?'rgba(255,55,55,.95)':'rgba(255,255,255,.4)';c.fillRect(tx-1,H-7,2,7);
       }
 
-      // -- MIC ANALYSIS --------------------------------------------------
-      if(micActive&&AR.current.analyser){
+      // -- MIC ANALYSIS -- throttled on weak devices --------------------------
+      if(micActive&&AR.current.analyser&&(DeviceComp.score>0.4||frame%2===0)){
         const an=AR.current.analyser;const fd=new Uint8Array(an.frequencyBinCount);an.getByteFrequencyData(fd);
         let rms=0,maxIdx=0,maxVal=0;
         for(let i=0;i<fd.length;i++){rms+=fd[i]*fd[i];if(fd[i]>maxVal){maxVal=fd[i];maxIdx=i;}}
