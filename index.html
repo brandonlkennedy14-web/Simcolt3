@@ -167,6 +167,7 @@ canvas#bg{position:fixed;inset:0;z-index:0;}
       <div class="gnode green" id="gn-smell">smell</div>
       <div class="gnode indigo" id="gn-tech">tech</div>
       <div class="gnode amber" id="gn-next">touch</div>
+      <div class="gnode" id="gn-winding" style="color:#ff0055;border-color:#3a0011;">winding</div>
     </div>
     <div style="font-size:7px;color:#0f2233;letter-spacing:0.15em;" id="gb-chaos">CHAOS —</div>
   </div>
@@ -302,6 +303,14 @@ async function pollState() {
       const p = latest.tech.payload;
       setLive('tech', true, `${p?.grade||'?'} · ${p?.atomCount||0} atoms · chaos ${((p?.chaos||0)*100).toFixed(0)}%`);
     }
+    const windRow = latest.winding || latest.winding_v3;
+    if (windRow) {
+      const p = windRow.payload;
+      const gnEl = document.getElementById('gn-winding');
+      if(gnEl){ gnEl.style.color='#ff0055'; gnEl.style.borderColor='rgba(255,0,85,0.4)'; gnEl.style.background='rgba(255,0,85,0.05)'; }
+      const statEl = document.getElementById('stat-winding');
+      if(statEl) statEl.textContent = `W${p?.total_winding||0} · struct ${((p?.struct_ratio||0)*100).toFixed(0)}%`;
+    }
   } catch(e) {}
 }
 
@@ -341,6 +350,13 @@ ws.onmessage = (e) => {
     if (rec.namespace === 'tech') {
       setLive('tech', true, `${p.grade||'?'} · ${p.atomCount||0} atoms`);
     }
+    if (rec.namespace === 'winding' || rec.namespace === 'winding_v3') {
+      const dotEl = document.getElementById('dot-winding');
+      const gnEl  = document.getElementById('gn-winding');
+      if(gnEl) { gnEl.style.color='#ff0055'; gnEl.style.borderColor='rgba(255,0,85,0.4)'; gnEl.style.background='rgba(255,0,85,0.05)'; }
+      const statEl = document.getElementById('stat-winding');
+      if(statEl) statEl.textContent = `W${p.total_winding||0} · struct ${((p.struct_ratio||0)*100).toFixed(0)}%`;
+    }
     if (rec.namespace === 'band_brain') {
       // Brain learning — pulse all particles briefly
       particles.forEach(pt=>{ pt.alpha = Math.min(0.6, pt.alpha + 0.15); setTimeout(()=>{ pt.alpha = Math.max(0.1, pt.alpha - 0.15); }, 800); });
@@ -351,7 +367,7 @@ ws.onmessage = (e) => {
 // Offline detection
 setInterval(() => {
   const now = Date.now();
-  ['sim3','band','smell','tech'].forEach(ns => {
+  ['sim3','band','smell','tech','winding'].forEach(ns => {
     if (lastSeen[ns] && now - lastSeen[ns] > TIMEOUT) setLive(ns, false, 'offline');
   });
 }, 3000);
