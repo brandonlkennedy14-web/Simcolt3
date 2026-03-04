@@ -60,6 +60,30 @@
             margin-bottom: 0;
         }
         .v2-btn:hover { background: rgba(168,85,247,0.15); border-color: rgba(168,85,247,0.6); box-shadow: 0 0 30px rgba(168,85,247,0.2); }
+        .v3-btn {
+            background: rgba(20,184,166,0.08);
+            border-color: rgba(20,184,166,0.3);
+            margin-bottom: 0;
+        }
+        .v3-btn:hover { background: rgba(20,184,166,0.15); border-color: rgba(20,184,166,0.6); box-shadow: 0 0 30px rgba(20,184,166,0.2); }
+
+        /* ── MUSEUM PANEL ── */
+        #museum-panel {
+            display: none; position: fixed; inset: 0; z-index: 10000;
+            background: rgba(2,6,23,0.97); overflow-y: auto;
+            padding: 24px;
+        }
+        #museum-panel.active { display: block; }
+        .museum-row {
+            border: 1px solid rgba(148,163,184,0.1);
+            border-radius: 8px; padding: 12px 16px; margin-bottom: 8px;
+            background: rgba(15,23,42,0.5); cursor: pointer;
+            transition: background 0.15s;
+        }
+        .museum-row:hover { background: rgba(15,23,42,0.9); }
+        .museum-v1 { border-left: 3px solid #38bdf8; }
+        .museum-v2 { border-left: 3px solid #a855f7; }
+        .museum-v3 { border-left: 3px solid #14b8a6; }
         .btn-tag {
             font-size: 9px; font-weight: 700; letter-spacing: 0.15em;
             text-transform: uppercase; font-family: monospace;
@@ -84,8 +108,8 @@
         select { background-color: #0f172a; color: #38bdf8; border: 1px solid #334155; outline: none; }
 
         /* ── CONTAINERS ── */
-        #v1-root, #v2-root { display: none; position: fixed; inset: 0; }
-        #v1-root.active, #v2-root.active { display: block; }
+        #v1-root, #v2-root, #v3-root { display: none; position: fixed; inset: 0; }
+        #v1-root.active, #v2-root.active, #v3-root.active { display: block; }
 
         /* ── V2 EXTRAS ── */
         #v2-museum-toast {
@@ -124,6 +148,17 @@
             <div style="font-size:17px;font-weight:700;color:#e2e8f0;margin-bottom:4px;">V2 — Deep Scan Engine</div>
             <div style="font-size:12px;color:#64748b;line-height:1.5;">Wall heat maps, winding-number visuals, deep scan remapping at 3 resolution levels, and richer museum logging — all on the same shared knowledge base.</div>
             <div style="margin-top:10px;font-size:10px;font-family:monospace;color:#a855f7;opacity:0.7;">Exclusion: 25→10→4 · Deep scan · Parent hash tree</div>
+        </button>
+
+        <button class="version-btn v3-btn" onclick="launchVersion('v3')">
+            <span class="btn-tag" style="background:rgba(20,184,166,0.15);color:#14b8a6;">New</span>
+            <div style="font-size:17px;font-weight:700;color:#e2e8f0;margin-bottom:4px;">V3 — Playback Engine</div>
+            <div style="font-size:12px;color:#64748b;line-height:1.5;">Pre-simulates 1000 frames silently, then plays back at your device's native frame rate. Every inversion burst fully visible. GenesisBrain live sync to all other apps.</div>
+            <div style="margin-top:10px;font-size:10px;font-family:monospace;color:#14b8a6;opacity:0.7;">1-tick/frame · Native fps · Full GenesisBrain sync</div>
+        </button>
+
+        <button onclick="openMuseum()" style="margin-top:14px;width:100%;padding:12px;border-radius:10px;border:1px solid rgba(148,163,184,0.15);background:rgba(148,163,184,0.05);color:#475569;font-size:11px;font-family:monospace;letter-spacing:0.1em;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='rgba(148,163,184,0.1)';this.style.color='#94a3b8'" onmouseout="this.style.background='rgba(148,163,184,0.05)';this.style.color='#475569'">
+            🏛️ VIEW MUSEUM — All Discovered Structures
         </button>
 
         <div style="margin-top:20px;font-size:10px;color:#334155;font-family:monospace;">
@@ -225,8 +260,60 @@
 
 
 <!-- ═══════════════════════════════════════════════
-     SHARED SUPABASE + SPLASH LOGIC
+     V3 ROOT — PLAYBACK ENGINE
 ═══════════════════════════════════════════════ -->
+<div id="v3-root">
+    <canvas id="v3-canvas" style="position:fixed;inset:0;width:100%;height:100%;z-index:0;"></canvas>
+    <div style="position:absolute;inset:0;z-index:10;display:flex;flex-direction:column;padding:12px;pointer-events:none;">
+        <div style="width:100%;max-width:1280px;margin:0 auto;flex-shrink:0;pointer-events:auto;">
+            <div class="glass-panel" style="border-radius:16px;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;border-top:2px solid rgba(20,184,166,0.5);">
+                <div>
+                    <h1 style="font-size:20px;font-weight:700;background:linear-gradient(to right,#14b8a6,#6366f1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Playback Engine</h1>
+                    <div style="display:flex;gap:16px;margin-top:6px;font-size:9px;font-family:monospace;color:#475569;">
+                        <span>CHAOS: <span id="v3-stat-chaos" style="color:#34d399;">0.00</span></span>
+                        <span>INV: <span id="v3-stat-inv" style="color:#38bdf8;">0</span></span>
+                        <span>MUSEUM: <span id="v3-stat-museum" style="color:#14b8a6;">0</span></span>
+                        <span>TICKS: <span id="v3-stat-ticks" style="color:#94a3b8;">0</span></span>
+                    </div>
+                </div>
+                <div style="display:flex;gap:12px;align-items:center;">
+                    <span id="v3-perf-indicator" style="font-size:10px;font-family:monospace;color:#14b8a6;text-transform:uppercase;font-weight:700;">Loading...</span>
+                    <button onclick="returnToSplash()" style="font-size:10px;font-family:monospace;color:#475569;background:rgba(71,85,105,0.2);border:1px solid #334155;border-radius:8px;padding:4px 10px;cursor:pointer;">⇦ SWITCH</button>
+                </div>
+            </div>
+            <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:12px;font-size:10px;font-family:monospace;letter-spacing:0.05em;">
+                <button id="v3-tab-platonic" class="glass-panel" style="padding:8px 16px;border-radius:8px;color:#14b8a6;font-weight:700;border-bottom:2px solid #14b8a6;cursor:pointer;background:none;">[1] PLATONIC BOUNDARIES</button>
+                <button id="v3-tab-discovery" class="glass-panel" style="padding:8px 16px;border-radius:8px;color:#94a3b8;cursor:pointer;background:none;border:none;">[2] DISCOVERY ENGINE</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     MUSEUM PANEL
+═══════════════════════════════════════════════ -->
+<div id="museum-panel">
+    <div style="max-width:700px;margin:0 auto;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
+            <div>
+                <h2 style="font-size:22px;font-weight:800;color:#e2e8f0;margin:0;">🏛️ Museum</h2>
+                <p style="font-size:11px;color:#475569;font-family:monospace;margin:4px 0 0;">All discovered boundary structures · Shared across V1, V2, V3</p>
+            </div>
+            <button onclick="closeMuseum()" style="font-size:11px;font-family:monospace;color:#475569;background:rgba(71,85,105,0.2);border:1px solid #334155;border-radius:8px;padding:6px 14px;cursor:pointer;">✕ CLOSE</button>
+        </div>
+        <!-- Filter bar -->
+        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+            <button onclick="filterMuseum('all')" id="mf-all" style="font-size:10px;font-family:monospace;padding:4px 12px;border-radius:99px;border:1px solid rgba(148,163,184,0.3);background:rgba(148,163,184,0.15);color:#e2e8f0;cursor:pointer;">ALL</button>
+            <button onclick="filterMuseum('v1')" id="mf-v1" style="font-size:10px;font-family:monospace;padding:4px 12px;border-radius:99px;border:1px solid rgba(56,189,248,0.3);background:transparent;color:#38bdf8;cursor:pointer;">V1</button>
+            <button onclick="filterMuseum('v2')" id="mf-v2" style="font-size:10px;font-family:monospace;padding:4px 12px;border-radius:99px;border:1px solid rgba(168,85,247,0.3);background:transparent;color:#a855f7;cursor:pointer;">V2</button>
+            <button onclick="filterMuseum('v3')" id="mf-v3" style="font-size:10px;font-family:monospace;padding:4px 12px;border-radius:99px;border:1px solid rgba(20,184,166,0.3);background:transparent;color:#14b8a6;cursor:pointer;">V3</button>
+            <span id="museum-count" style="font-size:10px;font-family:monospace;color:#334155;margin-left:auto;align-self:center;"></span>
+        </div>
+        <div id="museum-list">
+            <div style="text-align:center;color:#334155;font-family:monospace;font-size:12px;padding:40px;">Loading museum...</div>
+        </div>
+    </div>
+</div>
 <script>
     // ── Shared Supabase client (both versions read/write here) ──
     // Project: inversion_sim_db — xoolmbmnzbsvcqeyqvyi.supabase.co
@@ -337,7 +424,7 @@
 
     // ── Version launch ──
     let activeVersion = null;
-    let v1Loop = null, v2Loop = null;
+    let v1Loop = null, v2Loop = null, v3Loop = null;
 
     function launchVersion(v) {
         const splash = document.getElementById('splash');
@@ -347,23 +434,79 @@
         activeVersion = v;
         document.getElementById('v1-root').classList.toggle('active', v === 'v1');
         document.getElementById('v2-root').classList.toggle('active', v === 'v2');
+        document.getElementById('v3-root').classList.toggle('active', v === 'v3');
 
         loadSharedMuseum(() => {
             if (v === 'v1') initV1();
-            else initV2();
+            else if (v === 'v2') initV2();
+            else if (v === 'v3') initV3();
         });
     }
 
     function returnToSplash() {
-        // Pause both loops
         if (v1Loop) { cancelAnimationFrame(v1Loop); v1Loop = null; }
         if (v2Loop) { cancelAnimationFrame(v2Loop); v2Loop = null; }
+        if (v3Loop) { cancelAnimationFrame(v3Loop); v3Loop = null; }
         document.getElementById('v1-root').classList.remove('active');
         document.getElementById('v2-root').classList.remove('active');
+        document.getElementById('v3-root').classList.remove('active');
         const splash = document.getElementById('splash');
         splash.style.display = 'flex';
         splash.style.opacity = '1';
         splash.classList.remove('splash-fade-out');
+    }
+
+    // ── Museum viewer ──
+    let museumData = [], museumFilter = 'all';
+
+    function openMuseum() {
+        document.getElementById('museum-panel').classList.add('active');
+        loadMuseumData();
+    }
+    function closeMuseum() {
+        document.getElementById('museum-panel').classList.remove('active');
+    }
+    function filterMuseum(v) {
+        museumFilter = v;
+        renderMuseumList();
+    }
+    async function loadMuseumData() {
+        const list = document.getElementById('museum-list');
+        list.innerHTML = '<div style="text-align:center;color:#334155;font-family:monospace;font-size:12px;padding:40px;">Loading...</div>';
+        try {
+            const { data, error } = await sharedSupabase
+                .from('museum').select('*').order('created_at', { ascending: false }).limit(500);
+            if (error) throw error;
+            museumData = data || [];
+            renderMuseumList();
+        } catch(e) {
+            list.innerHTML = '<div style="text-align:center;color:#ef4444;font-family:monospace;font-size:12px;padding:40px;">Failed to load museum</div>';
+        }
+    }
+    function renderMuseumList() {
+        const rows = museumFilter === 'all' ? museumData : museumData.filter(r => r.version === museumFilter);
+        document.getElementById('museum-count').textContent = rows.length + ' entries';
+        const vColors = { v1:'#38bdf8', v2:'#a855f7', v3:'#14b8a6' };
+        const list = document.getElementById('museum-list');
+        if (!rows.length) {
+            list.innerHTML = '<div style="text-align:center;color:#334155;font-family:monospace;font-size:12px;padding:40px;">No entries found</div>';
+            return;
+        }
+        list.innerHTML = rows.map(r => `
+            <div class="museum-row museum-${r.version||'v1'}">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+                    <div style="font-size:10px;font-family:monospace;color:${vColors[r.version]||'#38bdf8'};word-break:break-all;flex:1;">${r.hash||'—'}</div>
+                    <span style="font-size:9px;font-family:monospace;padding:2px 7px;border-radius:99px;background:rgba(0,0,0,0.4);color:${vColors[r.version]||'#38bdf8'};white-space:nowrap;">${(r.version||'v1').toUpperCase()}</span>
+                </div>
+                <div style="display:flex;gap:16px;margin-top:8px;font-size:9px;font-family:monospace;color:#475569;flex-wrap:wrap;">
+                    <span>CHAOS <span style="color:#94a3b8;">${r.chaos_ratio||'—'}</span></span>
+                    <span>INV <span style="color:#94a3b8;">${r.inversions??'—'}</span></span>
+                    <span>TICK <span style="color:#94a3b8;">${r.tick_detected??'—'}</span></span>
+                    ${r.scan_level ? `<span>SCAN <span style="color:#f59e0b;">Lv${r.scan_level}</span></span>` : ''}
+                    ${r.parent_hash ? `<span style="color:#334155;">⬡ child</span>` : ''}
+                    <span style="margin-left:auto;">${r.created_at ? new Date(r.created_at).toLocaleDateString() : ''}</span>
+                </div>
+            </div>`).join('');
     }
 </script>
 
@@ -410,9 +553,7 @@ function initV1() {
     let currentGeoName = 'Square';
     let ticks = 0, inversions = 0, chaosRatio = 0.0;
     let currentConfigHash = '';
-    const PRESIM_TICKS = 1000;
-    let frameBuffer = [], playbackIdx = 0, playbackMode = true;
-    let lastFrameTime = performance.now(), fpsRolling = 60;
+    let CHUNK_SIZE = 300, lastFrameTime = performance.now(), fpsRolling = 60;
     let discoveryBounds = { minX: -150, maxX: 150, minY: -150, maxY: 150 };
 
     // ── Munker-White illusion state ──
@@ -550,54 +691,6 @@ function initV1() {
         do { _spawnBalls(); attempts++; }
         while(sharedKnownHashes.has(generateHash()) && attempts<50);
         currentConfigHash=generateHash();
-        preSim();
-    }
-
-    function snapshotState() {
-        return {
-            balls: balls.map(b=>({
-                x:b.x, y:b.y, vx:b.vx, vy:b.vy,
-                winding:b.winding, ticksSinceHit:b.ticksSinceHit,
-                lastAngle:b.lastAngle, type:b.type, groupId:b.groupId,
-                color:b.color, path:b.path.map(p=>({x:p.x,y:p.y})), isShadow:false
-            })),
-            shadowBalls: shadowBalls.map(b=>({
-                x:b.x, y:b.y, vx:b.vx, vy:b.vy,
-                winding:b.winding, ticksSinceHit:b.ticksSinceHit, lastAngle:b.lastAngle
-            })),
-            chaosRatio, inversions, ticks,
-            discoveryBounds:{...discoveryBounds},
-            geoScale:activeGeo.scale
-        };
-    }
-
-    function restoreSnapshot(snap) {
-        snap.balls.forEach((s,i)=>{
-            const b=balls[i]; if(!b) return;
-            b.x=s.x; b.y=s.y; b.vx=s.vx; b.vy=s.vy;
-            b.winding=s.winding; b.ticksSinceHit=s.ticksSinceHit;
-            b.lastAngle=s.lastAngle; b.path=s.path.map(p=>({x:p.x,y:p.y}));
-        });
-        snap.shadowBalls.forEach((s,i)=>{
-            const b=shadowBalls[i]; if(!b) return;
-            b.x=s.x; b.y=s.y; b.vx=s.vx; b.vy=s.vy;
-            b.winding=s.winding; b.ticksSinceHit=s.ticksSinceHit;
-        });
-        chaosRatio=snap.chaosRatio; inversions=snap.inversions; ticks=snap.ticks;
-        discoveryBounds={...snap.discoveryBounds};
-        activeGeo.scale=snap.geoScale;
-    }
-
-    function preSim() {
-        frameBuffer=[]; playbackIdx=0; playbackMode=true;
-        for(let t=0;t<PRESIM_TICKS;t++){
-            balls.forEach((b,i)=>b.update(shadowBalls[i]));
-            shadowBalls.forEach(b=>b.update(null));
-            applyExclusionPrinciple();
-            checkInversion();
-            ticks++;
-            frameBuffer.push(snapshotState());
-        }
     }
 
     function applyExclusionPrinciple() {
@@ -764,31 +857,17 @@ function initV1() {
         fpsRolling = (fpsRolling*0.9) + ((1000/Math.max(1,now-lastFrameTime))*0.1);
         lastFrameTime = now;
         munkerOffset = Math.sin(now*0.0008)*MUNKER_STRIPE_H*3 + now*0.01;
-
         const perfEl = document.getElementById('v1-perf-indicator');
+        if(fpsRolling<30){CHUNK_SIZE=Math.max(50,CHUNK_SIZE-5);perfEl.textContent='Compute: Throttled';perfEl.style.color='#f87171';}
+        else if(fpsRolling>55){CHUNK_SIZE=Math.min(800,CHUNK_SIZE+2);perfEl.textContent='Compute: Unleashed';perfEl.style.color='#34d399';}
 
-        if(playbackMode) {
-            // Replay pre-simulated frames at native display rate — zero latency
-            restoreSnapshot(frameBuffer[playbackIdx]);
-            playbackIdx++;
-            if(playbackIdx >= frameBuffer.length) {
-                playbackMode = false;
-                frameBuffer = []; // free memory
-                perfEl.textContent='Compute: Live'; perfEl.style.color='#34d399';
-            } else {
-                const pct = Math.round(playbackIdx/frameBuffer.length*100);
-                perfEl.textContent=`Playback: ${pct}%`; perfEl.style.color='#38bdf8';
-            }
-        } else {
-            // Live mode: exactly 1 tick per frame — matches user display rate
+        for(let c=0;c<CHUNK_SIZE;c++){
             balls.forEach((b,i)=>b.update(shadowBalls[i]));
             shadowBalls.forEach(b=>b.update(null));
             applyExclusionPrinciple();
             checkInversion();
             ticks++;
-            perfEl.textContent=`Live · ${fpsRolling.toFixed(0)}fps`; perfEl.style.color='#34d399';
         }
-
         draw();
 
         if(sharedDbConnected && ticks>0 && ticks-lastMuseumTicks>=10000 && chaosRatio<8.0){
@@ -921,9 +1000,7 @@ function initV2() {
 
     let simMode='platonic', currentGeoName='Square';
     let ticks=0, inversions=0, chaosRatio=0.0;
-    const PRESIM_TICKS=1000;
-    let frameBuffer=[], playbackIdx=0, playbackMode=true;
-    let lastFrameTime=performance.now(), fpsRolling=60;
+    let CHUNK_SIZE=300, lastFrameTime=performance.now(), fpsRolling=60;
     let discoveryBounds={minX:-150,maxX:150,minY:-150,maxY:150};
 
     const geometries={
@@ -1056,60 +1133,6 @@ function initV2() {
         let attempts=0;
         do { _spawnBalls(); attempts++; }
         while(sharedKnownHashes.has(generateHash()) && attempts<50);
-        preSim();
-    }
-
-    function snapshotState(){
-        return {
-            balls: balls.map(b=>({
-                x:b.x, y:b.y, vx:b.vx, vy:b.vy,
-                winding:b.winding, ticksSinceHit:b.ticksSinceHit,
-                lastAngle:b.lastAngle, glowIntensity:b.glowIntensity,
-                type:b.type, groupId:b.groupId, color:b.color,
-                path:b.path.map(p=>({x:p.x,y:p.y}))
-            })),
-            shadowBalls: shadowBalls.map(b=>({
-                x:b.x, y:b.y, vx:b.vx, vy:b.vy,
-                winding:b.winding, ticksSinceHit:b.ticksSinceHit, lastAngle:b.lastAngle
-            })),
-            chaosRatio, inversions, ticks,
-            discoveryBounds:{...discoveryBounds},
-            geoScale:activeGeo.scale,
-            wallHeat:[...wallHeat], wallHeatMax,
-            scanLevel, scanParentHash
-        };
-    }
-
-    function restoreSnapshot(snap){
-        snap.balls.forEach((s,i)=>{
-            const b=balls[i]; if(!b) return;
-            b.x=s.x; b.y=s.y; b.vx=s.vx; b.vy=s.vy;
-            b.winding=s.winding; b.ticksSinceHit=s.ticksSinceHit;
-            b.lastAngle=s.lastAngle; b.glowIntensity=s.glowIntensity;
-            b.path=s.path.map(p=>({x:p.x,y:p.y}));
-        });
-        snap.shadowBalls.forEach((s,i)=>{
-            const b=shadowBalls[i]; if(!b) return;
-            b.x=s.x; b.y=s.y; b.vx=s.vx; b.vy=s.vy;
-            b.winding=s.winding; b.ticksSinceHit=s.ticksSinceHit;
-        });
-        chaosRatio=snap.chaosRatio; inversions=snap.inversions; ticks=snap.ticks;
-        discoveryBounds={...snap.discoveryBounds};
-        activeGeo.scale=snap.geoScale;
-        wallHeat=[...snap.wallHeat]; wallHeatMax=snap.wallHeatMax;
-        scanLevel=snap.scanLevel; scanParentHash=snap.scanParentHash;
-    }
-
-    function preSim(){
-        frameBuffer=[]; playbackIdx=0; playbackMode=true;
-        for(let t=0;t<PRESIM_TICKS;t++){
-            balls.forEach((b,i)=>b.update(shadowBalls[i]));
-            shadowBalls.forEach(b=>b.update(null));
-            applyExclusionPrinciple();
-            checkInversion();
-            ticks++;
-            frameBuffer.push(snapshotState());
-        }
     }
 
     function triggerDeepScan(parentHash){
@@ -1380,30 +1403,16 @@ function initV2() {
         lastFrameTime=now;
         munkerOffset=Math.sin(now*0.0008)*MUNKER_STRIPE_H*3+now*0.01;
         const perfEl=document.getElementById('v2-perf-indicator');
+        if(fpsRolling<30){CHUNK_SIZE=Math.max(50,CHUNK_SIZE-5);perfEl.textContent='Compute: Throttled';perfEl.style.color='#f87171';}
+        else if(fpsRolling>55){CHUNK_SIZE=Math.min(800,CHUNK_SIZE+2);perfEl.textContent='Compute: Unleashed';perfEl.style.color='#34d399';}
 
-        if(playbackMode){
-            // Replay pre-simulated frames at native display rate — zero latency
-            restoreSnapshot(frameBuffer[playbackIdx]);
-            document.getElementById('v2-stat-scan').textContent=scanLevel;
-            playbackIdx++;
-            if(playbackIdx>=frameBuffer.length){
-                playbackMode=false;
-                frameBuffer=[]; // free memory
-                perfEl.textContent='Live · '+fpsRolling.toFixed(0)+'fps'; perfEl.style.color='#34d399';
-            } else {
-                const pct=Math.round(playbackIdx/frameBuffer.length*100);
-                perfEl.textContent='Playback: '+pct+'%'; perfEl.style.color='#38bdf8';
-            }
-        } else {
-            // Live mode: exactly 1 tick per frame — inversion bursts fully visible
+        for(let c=0;c<CHUNK_SIZE;c++){
             balls.forEach((b,i)=>b.update(shadowBalls[i]));
             shadowBalls.forEach(b=>b.update(null));
             applyExclusionPrinciple();
             checkInversion();
             ticks++;
-            perfEl.textContent='Live · '+fpsRolling.toFixed(0)+'fps'; perfEl.style.color='#34d399';
         }
-
         draw();
 
         if(sharedDbConnected&&ticks>0&&ticks-lastMuseumTicks>=10000&&chaosRatio<8.0){
@@ -1487,6 +1496,380 @@ function initV2() {
         initBalls();
     };
     window.addEventListener('resize',()=>{if(activeVersion==='v2') resizeCanvas();});
+
+    resizeCanvas();
+    initBalls();
+    loop();
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     V3 ENGINE — PLAYBACK + GENESIS BRAIN SYNC
+     V1 and V2 above are completely untouched.
+     V3 is purely additive.
+═══════════════════════════════════════════════ -->
+<script>
+function initV3() {
+    const colors = ['#ef4444','#f97316','#eab308','#22c55e','#3b82f6','#4f46e5','#a855f7'];
+    const ST_H = 5;
+    const ZETA_VOID_LIMIT = 2000;
+    const PRESIM_TICKS = 1000;
+
+    const canvas = document.getElementById('v3-canvas');
+    const ctx = canvas.getContext('2d');
+    let width, height, CENTER_X, CENTER_Y, baseScale = 1;
+    let bgPattern, fgPatterns = [];
+
+    function initPatterns() {
+        let bgCanv = document.createElement('canvas');
+        bgCanv.width = 1; bgCanv.height = ST_H * 7;
+        let bCtx = bgCanv.getContext('2d');
+        colors.forEach((c,i) => { bCtx.fillStyle=c; bCtx.fillRect(0,i*ST_H,1,ST_H); });
+        bgPattern = ctx.createPattern(bgCanv,'repeat');
+        fgPatterns = colors.map((c,i) => {
+            let fc=document.createElement('canvas'); fc.width=1; fc.height=ST_H*7;
+            let fCtx=fc.getContext('2d'); fCtx.fillStyle=c; fCtx.fillRect(0,i*ST_H,1,ST_H);
+            return ctx.createPattern(fc,'repeat');
+        });
+    }
+
+    function resizeCanvas() {
+        width=window.innerWidth; height=window.innerHeight;
+        canvas.width=width; canvas.height=height;
+        CENTER_X=width/2; CENTER_Y=height/2;
+        baseScale=Math.min(width,height)/800;
+        initPatterns();
+    }
+
+    let simMode='platonic', currentGeoName='Square';
+    let ticks=0, inversions=0, chaosRatio=0.0, museumCount=0;
+    let lastMuseumTicks=0;
+    let frameBuffer=[], playbackIdx=0, playbackMode=true;
+    let lastFrameTime=performance.now(), fpsRolling=60;
+    let discoveryBounds={minX:-150,maxX:150,minY:-150,maxY:150};
+    const MUNKER_STRIPE_H=38; let munkerOffset=0;
+
+    const geometries={
+        'Square':  {type:'poly',basePoints:[[-150,-150],[150,-150],[150,150],[-150,150]],scale:1},
+        'Triangle':{type:'poly',basePoints:[[0,-180],[156,90],[-156,90]],scale:1},
+        'Hexagon': {type:'poly',basePoints:[],scale:1},
+        'Octagon': {type:'poly',basePoints:[],scale:1},
+        'Circle':  {type:'circle',baseRadius:150,scale:1}
+    };
+    for(let i=0;i<6;i++) geometries['Hexagon'].basePoints.push([Math.cos(i*Math.PI/3-Math.PI/6)*165,Math.sin(i*Math.PI/3-Math.PI/6)*165]);
+    for(let i=0;i<8;i++) geometries['Octagon'].basePoints.push([Math.cos(i*Math.PI/4-Math.PI/8)*160,Math.sin(i*Math.PI/4-Math.PI/8)*160]);
+    let activeGeo=geometries['Square'];
+
+    function getScaledPoints() {
+        if(activeGeo.type!=='poly') return [];
+        return activeGeo.basePoints.map(p=>[p[0]*activeGeo.scale,p[1]*activeGeo.scale]);
+    }
+
+    class Ball {
+        constructor(groupId,isShadow=false) {
+            this.groupId=groupId; this.color=colors[groupId]; this.isShadow=isShadow;
+            this.type=Math.random()>0.5?'smith':'blade'; this.reset();
+        }
+        reset() {
+            this.x=(Math.random()*80-40); this.y=(Math.random()*80-40);
+            let speed=this.type==='blade'?2.5:1.2, angle=Math.random()*Math.PI*2;
+            this.vx=Math.cos(angle)*speed; this.vy=Math.sin(angle)*speed;
+            this.winding=0; this.ticksSinceHit=0; this.path=[]; this.lastAngle=undefined;
+        }
+        update(shadowBall) {
+            this.x+=this.vx; this.y+=this.vy; this.ticksSinceHit++;
+            if(!this.isShadow && shadowBall){
+                let dx=this.x-shadowBall.x, dy=this.y-shadowBall.y;
+                chaosRatio=(chaosRatio*0.999)+(Math.sqrt(dx*dx+dy*dy)*0.001);
+            }
+            if(!this.isShadow && ticks%5===0){
+                this.path.push({x:this.x,y:this.y});
+                if(this.path.length>50) this.path.shift();
+            }
+            let angle=Math.atan2(this.y,this.x);
+            if(this.lastAngle!==undefined){
+                let da=angle-this.lastAngle;
+                if(da>Math.PI) da-=2*Math.PI;
+                if(da<-Math.PI) da+=2*Math.PI;
+                this.winding+=da/(2*Math.PI);
+            }
+            this.lastAngle=angle;
+            this.checkBoundaries();
+            if(this.ticksSinceHit>ZETA_VOID_LIMIT){this.x*=0.1;this.y*=0.1;this.vx*=-1;this.vy*=-1;this.ticksSinceHit=0;}
+        }
+        checkBoundaries() {
+            let hit=false;
+            if(simMode==='discovery'){
+                if(this.x<discoveryBounds.minX||this.x>discoveryBounds.maxX){
+                    if(this.type==='blade'){discoveryBounds.minX-=0.05;discoveryBounds.maxX+=0.05;}
+                    this.vx*=-1; this.x=this.x<discoveryBounds.minX?discoveryBounds.minX:discoveryBounds.maxX; hit=true;
+                }
+                if(this.y<discoveryBounds.minY||this.y>discoveryBounds.maxY){
+                    if(this.type==='blade'){discoveryBounds.minY-=0.05;discoveryBounds.maxY+=0.05;}
+                    this.vy*=-1; this.y=this.y<discoveryBounds.minY?discoveryBounds.minY:discoveryBounds.maxY; hit=true;
+                }
+            } else {
+                if(activeGeo.type==='circle'){
+                    let r=activeGeo.baseRadius*activeGeo.scale;
+                    if(this.x*this.x+this.y*this.y>r*r){
+                        if(this.type==='blade') activeGeo.scale+=0.0002;
+                        let dist=Math.sqrt(this.x*this.x+this.y*this.y);
+                        let nx=this.x/dist, ny=this.y/dist, dot=this.vx*nx+this.vy*ny;
+                        if(dot>0){this.vx-=2*dot*nx;this.vy-=2*dot*ny;this.x=nx*r;this.y=ny*r;hit=true;}
+                    }
+                } else {
+                    let pts=getScaledPoints();
+                    for(let i=0;i<pts.length;i++){
+                        let p1=pts[i],p2=pts[(i+1)%pts.length];
+                        let nx=-(p2[1]-p1[1]),ny=p2[0]-p1[0],len=Math.sqrt(nx*nx+ny*ny);
+                        nx/=len; ny/=len;
+                        if(nx*(-p1[0])+ny*(-p1[1])<0){nx=-nx;ny=-ny;}
+                        let d=(this.x-p1[0])*nx+(this.y-p1[1])*ny;
+                        if(d<0){
+                            if(this.type==='blade') activeGeo.scale+=0.0002;
+                            let dot=this.vx*(-nx)+this.vy*(-ny);
+                            if(dot>0){this.vx-=2*dot*(-nx);this.vy-=2*dot*(-ny);this.x-=d*nx;this.y-=d*ny;hit=true;}
+                        }
+                    }
+                }
+            }
+            if(hit) this.ticksSinceHit=0;
+        }
+    }
+
+    let balls=[], shadowBalls=[];
+
+    function _spawnBalls() {
+        balls=[]; shadowBalls=[];
+        for(let g=0;g<colors.length;g++){
+            for(let b=0;b<7;b++) balls.push(new Ball(g));
+            for(let b=0;b<7;b++) shadowBalls.push(new Ball(g,true));
+        }
+        ticks=0; inversions=0; chaosRatio=0; lastMuseumTicks=0;
+        discoveryBounds={minX:-150,maxX:150,minY:-150,maxY:150};
+        if(simMode==='platonic') activeGeo.scale=1;
+    }
+
+    function generateHash() {
+        let h=balls.map(b=>`${b.type}_${b.vx.toFixed(1)}_${b.vy.toFixed(1)}`).join('|');
+        let hash=0;
+        for(let i=0;i<h.length;i++){hash=(hash<<5)-hash+h.charCodeAt(i);hash|=0;}
+        const hash16=Math.abs(hash).toString(16).padStart(8,'0');
+        return simMode==='discovery'?`Disc_W${Math.round(discoveryBounds.maxX-discoveryBounds.minX)}_v3_${hash16}`:`${currentGeoName}_v3_${hash16}`;
+    }
+
+    function initBalls() {
+        let attempts=0;
+        do { _spawnBalls(); attempts++; }
+        while(sharedKnownHashes.has(generateHash()) && attempts<50);
+        preSim();
+    }
+
+    // ── Snapshot / playback system ──
+    function snapshotState() {
+        return {
+            balls:balls.map(b=>({x:b.x,y:b.y,vx:b.vx,vy:b.vy,winding:b.winding,ticksSinceHit:b.ticksSinceHit,lastAngle:b.lastAngle,type:b.type,groupId:b.groupId,color:b.color,path:b.path.map(p=>({x:p.x,y:p.y}))})),
+            shadowBalls:shadowBalls.map(b=>({x:b.x,y:b.y,vx:b.vx,vy:b.vy,winding:b.winding,ticksSinceHit:b.ticksSinceHit,lastAngle:b.lastAngle})),
+            chaosRatio,inversions,ticks,discoveryBounds:{...discoveryBounds},geoScale:activeGeo.scale
+        };
+    }
+    function restoreSnapshot(snap) {
+        snap.balls.forEach((s,i)=>{ const b=balls[i]; if(!b) return; Object.assign(b,{...s,path:s.path.map(p=>({x:p.x,y:p.y}))}); });
+        snap.shadowBalls.forEach((s,i)=>{ const b=shadowBalls[i]; if(!b) return; Object.assign(b,s); });
+        chaosRatio=snap.chaosRatio; inversions=snap.inversions; ticks=snap.ticks;
+        discoveryBounds={...snap.discoveryBounds}; activeGeo.scale=snap.geoScale;
+    }
+    function preSim() {
+        frameBuffer=[]; playbackIdx=0; playbackMode=true;
+        for(let t=0;t<PRESIM_TICKS;t++){
+            balls.forEach((b,i)=>b.update(shadowBalls[i]));
+            shadowBalls.forEach(b=>b.update(null));
+            applyExclusionPrinciple();
+            checkInversion();
+            ticks++;
+            frameBuffer.push(snapshotState());
+        }
+    }
+
+    function applyExclusionPrinciple() {
+        const excDist=25;
+        for(let i=0;i<balls.length;i++){
+            for(let j=i+1;j<balls.length;j++){
+                let dx=balls[i].x-balls[j].x, dy=balls[i].y-balls[j].y;
+                if(dx*dx+dy*dy < excDist*excDist){
+                    let b1=balls[i],b2=balls[j];
+                    if(Math.abs(b1.winding)<0.1){b1.vx=(Math.random()-0.5)*15;b1.vy=(Math.random()-0.5)*15;}
+                    if(Math.abs(b1.winding)>Math.abs(b2.winding)){b2.vx*=-1.08;b2.vy*=-1.08;}
+                    else{b1.vx*=-1.08;b1.vy*=-1.08;}
+                }
+            }
+        }
+    }
+
+    function checkInversion() {
+        if(simMode==='platonic'&&activeGeo.scale>4.5){
+            inversions++; activeGeo.scale=0.5;
+            balls.forEach(b=>{b.x*=0.1;b.y*=0.1;b.vx*=-1;b.vy*=-1;});
+        } else if(simMode==='discovery'&&(discoveryBounds.maxX-discoveryBounds.minX>760)){
+            inversions++;
+            discoveryBounds={minX:-50,maxX:50,minY:-50,maxY:50};
+            balls.forEach(b=>{b.x*=0.1;b.y*=0.1;b.vx*=-1;b.vy*=-1;});
+        }
+        document.getElementById('v3-stat-inv').textContent=inversions;
+    }
+
+    function drawMunkerWhite(W,H,offset,stripeH) {
+        ctx.save();
+        ctx.beginPath();
+        if(simMode==='discovery'){ctx.rect(CENTER_X+discoveryBounds.minX*baseScale,CENTER_Y+discoveryBounds.minY*baseScale,(discoveryBounds.maxX-discoveryBounds.minX)*baseScale,(discoveryBounds.maxY-discoveryBounds.minY)*baseScale);}
+        else if(activeGeo.type==='circle'){ctx.arc(CENTER_X,CENTER_Y,activeGeo.baseRadius*activeGeo.scale*baseScale,0,Math.PI*2);}
+        else{let pts=getScaledPoints();ctx.moveTo(CENTER_X+pts[0][0]*baseScale,CENTER_Y+pts[0][1]*baseScale);for(let i=1;i<pts.length;i++) ctx.lineTo(CENTER_X+pts[i][0]*baseScale,CENTER_Y+pts[i][1]*baseScale);ctx.closePath();}
+        ctx.clip();
+        const bandW=W*0.08, leftBandX=W*0.18, rightBandX=W*0.74;
+        ctx.globalAlpha=0.30; ctx.fillStyle='#808080';
+        ctx.fillRect(leftBandX,0,bandW,H); ctx.fillRect(rightBandX,0,bandW,H);
+        ctx.globalAlpha=1.0;
+        const startY=(offset%stripeH)-stripeH;
+        for(let y=startY;y<H+stripeH;y+=stripeH){ctx.fillStyle='rgba(0,0,0,0.88)';ctx.fillRect(0,y,W,1);}
+        for(let y=startY;y<H+stripeH;y+=stripeH){ctx.fillStyle='rgba(255,255,255,0.88)';ctx.fillRect(rightBandX,y,bandW,1);}
+        ctx.restore();
+    }
+
+    function draw() {
+        ctx.clearRect(0,0,width,height);
+        ctx.fillStyle=bgPattern; ctx.fillRect(0,0,width,height);
+        ctx.fillStyle='rgba(2,6,23,0.7)';
+        ctx.beginPath(); ctx.rect(0,0,width,height);
+        if(simMode==='discovery'){ctx.rect(CENTER_X+discoveryBounds.minX*baseScale,CENTER_Y+discoveryBounds.minY*baseScale,(discoveryBounds.maxX-discoveryBounds.minX)*baseScale,(discoveryBounds.maxY-discoveryBounds.minY)*baseScale);}
+        else if(activeGeo.type==='circle'){ctx.arc(CENTER_X,CENTER_Y,activeGeo.baseRadius*activeGeo.scale*baseScale,0,Math.PI*2,true);}
+        else{let pts=getScaledPoints();ctx.moveTo(CENTER_X+pts[0][0]*baseScale,CENTER_Y+pts[0][1]*baseScale);for(let i=pts.length-1;i>=0;i--) ctx.lineTo(CENTER_X+pts[i][0]*baseScale,CENTER_Y+pts[i][1]*baseScale);}
+        ctx.fill('evenodd');
+        drawMunkerWhite(width,height,munkerOffset,MUNKER_STRIPE_H);
+
+        ctx.lineWidth=1.5; ctx.globalCompositeOperation='hard-light';
+        let maxDist=(simMode==='discovery'?150:150*activeGeo.scale)*baseScale;
+        for(let i=0;i<balls.length;i++){
+            for(let j=i+1;j<balls.length;j++){
+                let dx=balls[i].x*baseScale-balls[j].x*baseScale, dy=balls[i].y*baseScale-balls[j].y*baseScale;
+                if(Math.abs(dx)>maxDist||Math.abs(dy)>maxDist) continue;
+                let dist=Math.sqrt(dx*dx+dy*dy);
+                if(dist<maxDist){
+                    ctx.beginPath();
+                    ctx.moveTo(CENTER_X+balls[i].x*baseScale,CENTER_Y+balls[i].y*baseScale);
+                    let warpX=(balls[i].vx+balls[j].vx)*10*baseScale, warpY=(balls[i].vy+balls[j].vy)*10*baseScale;
+                    ctx.bezierCurveTo(CENTER_X+balls[i].x*baseScale+warpX,CENTER_Y+balls[i].y*baseScale-warpY,CENTER_X+balls[j].x*baseScale-warpX,CENTER_Y+balls[j].y*baseScale+warpY,CENTER_X+balls[j].x*baseScale,CENTER_Y+balls[j].y*baseScale);
+                    let opacity=(1-dist/maxDist)*0.8;
+                    let grad=ctx.createLinearGradient(CENTER_X+balls[i].x*baseScale,CENTER_Y+balls[i].y*baseScale,CENTER_X+balls[j].x*baseScale,CENTER_Y+balls[j].y*baseScale);
+                    grad.addColorStop(0,balls[i].color+Math.floor(opacity*255).toString(16).padStart(2,'0'));
+                    grad.addColorStop(1,balls[j].color+Math.floor(opacity*255).toString(16).padStart(2,'0'));
+                    ctx.strokeStyle=grad; ctx.stroke();
+                }
+            }
+        }
+        ctx.globalCompositeOperation='source-over';
+
+        // Trail + balls
+        const groups=[...new Set(balls.map(b=>b.groupId))];
+        groups.forEach(g=>{
+            const groupBalls=balls.filter(b=>b.groupId===g);
+            groupBalls.forEach(b=>{
+                if(b.path.length>1){
+                    let windingBoost=Math.min(1,Math.abs(b.winding)/5);
+                    ctx.beginPath(); ctx.moveTo(CENTER_X+b.path[0].x*baseScale,CENTER_Y+b.path[0].y*baseScale);
+                    for(let p=1;p<b.path.length;p++) ctx.lineTo(CENTER_X+b.path[p].x*baseScale,CENTER_Y+b.path[p].y*baseScale);
+                    ctx.strokeStyle=b.color+(Math.floor((0.35+windingBoost*0.45)*255)).toString(16).padStart(2,'0');
+                    ctx.lineWidth=b.type==='smith'?3+windingBoost*2:1.5+windingBoost; ctx.stroke();
+                }
+            });
+            groupBalls.forEach(b=>{
+                let windingBoost=Math.min(1,Math.abs(b.winding)/5);
+                let r=(b.type==='smith'?8:5)*baseScale*(1+windingBoost*0.4);
+                ctx.beginPath(); ctx.arc(CENTER_X+b.x*baseScale,CENTER_Y+b.y*baseScale,r,0,Math.PI*2);
+                ctx.shadowBlur=Math.max(windingBoost*0.6)*30; ctx.shadowColor=b.color;
+                ctx.fillStyle='#94a3b8'; ctx.fill();
+                if(fgPatterns[g]){ctx.fillStyle=fgPatterns[g];ctx.fill();}
+                ctx.shadowBlur=0;
+            });
+        });
+
+        // Boundary stroke
+        ctx.strokeStyle='#334155'; ctx.lineWidth=3;
+        if(simMode==='discovery'){ctx.strokeRect(CENTER_X+discoveryBounds.minX*baseScale,CENTER_Y+discoveryBounds.minY*baseScale,(discoveryBounds.maxX-discoveryBounds.minX)*baseScale,(discoveryBounds.maxY-discoveryBounds.minY)*baseScale);}
+        else if(activeGeo.type==='circle'){ctx.beginPath();ctx.arc(CENTER_X,CENTER_Y,activeGeo.baseRadius*activeGeo.scale*baseScale,0,Math.PI*2);ctx.stroke();}
+        else{let pts=getScaledPoints();ctx.beginPath();ctx.moveTo(CENTER_X+pts[0][0]*baseScale,CENTER_Y+pts[0][1]*baseScale);for(let i=1;i<pts.length;i++) ctx.lineTo(CENTER_X+pts[i][0]*baseScale,CENTER_Y+pts[i][1]*baseScale);ctx.closePath();ctx.stroke();}
+
+        // HUD stats
+        document.getElementById('v3-stat-chaos').textContent=chaosRatio.toFixed(2);
+        document.getElementById('v3-stat-ticks').textContent=ticks;
+    }
+
+    function loop() {
+        const now=performance.now();
+        fpsRolling=(fpsRolling*0.9)+((1000/Math.max(1,now-lastFrameTime))*0.1);
+        lastFrameTime=now;
+        munkerOffset=Math.sin(now*0.0008)*MUNKER_STRIPE_H*3+now*0.01;
+        const perfEl=document.getElementById('v3-perf-indicator');
+
+        if(playbackMode){
+            restoreSnapshot(frameBuffer[playbackIdx]);
+            playbackIdx++;
+            if(playbackIdx>=frameBuffer.length){
+                playbackMode=false; frameBuffer=[];
+                perfEl.textContent='Live · '+fpsRolling.toFixed(0)+'fps'; perfEl.style.color='#14b8a6';
+            } else {
+                perfEl.textContent='Playback '+Math.round(playbackIdx/frameBuffer.length*100)+'%'; perfEl.style.color='#38bdf8';
+            }
+        } else {
+            // 1 tick per frame — inversion bursts fully visible
+            balls.forEach((b,i)=>b.update(shadowBalls[i]));
+            shadowBalls.forEach(b=>b.update(null));
+            applyExclusionPrinciple();
+            checkInversion();
+            ticks++;
+        }
+
+        draw();
+
+        // Museum logging
+        if(sharedDbConnected&&ticks>0&&ticks-lastMuseumTicks>=10000&&chaosRatio<8.0){
+            lastMuseumTicks=ticks;
+            let hash=generateHash();
+            if(!sharedKnownHashes.has(hash)){
+                sharedKnownHashes.add(hash); museumCount++;
+                document.getElementById('v3-stat-museum').textContent=museumCount;
+                sharedSupabase.from('museum').upsert({
+                    hash, chaos_ratio:chaosRatio.toFixed(2),
+                    tick_detected:ticks, inversions, version:'v3'
+                }).catch(e=>console.error(e));
+            }
+        }
+
+        // GenesisBrain sync
+        gbWriteSim3({
+            balls:balls.slice(0,49).map(b=>({
+                x:(CENTER_X+b.x*baseScale)/width, y:(CENTER_Y+b.y*baseScale)/height,
+                vx:b.vx, vy:b.vy, winding:b.winding, color:b.color, type:b.type, groupId:b.groupId, glow:0
+            })),
+            chaos_ratio:chaosRatio, inversions, ticks, geo:currentGeoName, sim_mode:simMode, version:'v3'
+        });
+
+        v3Loop=requestAnimationFrame(loop);
+    }
+
+    // UI
+    document.getElementById('v3-tab-platonic').onclick=()=>{
+        simMode='platonic'; currentGeoName='Square'; activeGeo=geometries['Square'];
+        document.getElementById('v3-tab-platonic').style.cssText+='color:#14b8a6;font-weight:700;border-bottom:2px solid #14b8a6;';
+        document.getElementById('v3-tab-discovery').style.cssText+='color:#94a3b8;border-bottom:none;';
+        initBalls();
+    };
+    document.getElementById('v3-tab-discovery').onclick=()=>{
+        simMode='discovery'; currentGeoName='Disc';
+        document.getElementById('v3-tab-discovery').style.cssText+='color:#14b8a6;font-weight:700;border-bottom:2px solid #14b8a6;';
+        document.getElementById('v3-tab-platonic').style.cssText+='color:#94a3b8;border-bottom:none;';
+        initBalls();
+    };
+    window.addEventListener('resize',()=>{ if(activeVersion==='v3') resizeCanvas(); });
 
     resizeCanvas();
     initBalls();
