@@ -96,6 +96,66 @@ const db={
 let _gbV=0;
 const gbWrite=async(payload)=>{try{await fetch(SB_URL+'/rest/v1/genesis_brain',{method:'POST',headers:SB_UH,body:JSON.stringify({namespace:'band',version:++_gbV,payload:{...payload,_ts:Date.now()}})}); }catch(e){}}
 
+// -- COLLECTIVE BRAIN: shared learning across all users ----------------------
+// namespace 'band_brain' stores Q-table, neural bass weights, phrase memory.
+// Every user loads on mount and saves back periodically.
+// Result: the band gets smarter with every session from every user.
+const BRAIN_NS='band_brain';
+
+const collectiveBrainLoad=async()=>{
+  try{
+    const r=await fetch(SB_URL+'/rest/v1/genesis_brain?select=payload&namespace=eq.'+BRAIN_NS,{headers:SB_H});
+    const rows=await r.json();
+    if(!Array.isArray(rows)||rows.length===0)return;
+    const p=rows[0].payload; if(!p)return;
+    // Merge Q-table: blend 70% collective / 30% fresh so new users still explore
+    if(p.q&&typeof p.q==='object'){
+      for(const[k,v]of Object.entries(p.q)){
+        brain.q[k]=brain.q[k]!=null?(brain.q[k]*0.3+v*0.7):v;
+      }
+    }
+    if(typeof p.n==='number') brain.n=Math.max(brain.n,Math.floor(p.n*0.8));
+    if(typeof p.eps==='number') brain.eps=Math.min(brain.eps,p.eps+0.05);
+    // Merge neural bass weights same ratio
+    if(Array.isArray(p.bassWeights)&&p.bassWeights.length===bassBrain.weights.length){
+      bassBrain.weights=bassBrain.weights.map((row,i)=>
+        row.map((w,j)=>w*0.3+(p.bassWeights[i]?.[j]??w)*0.7)
+      );
+    }
+    // Seed motif engine with collective phrases
+    if(Array.isArray(p.phrases)&&p.phrases.length>0){
+      p.phrases.slice(-8).forEach(ph=>{
+        if(ph&&ph.ivs&&ph.ivs.length>0) motifEng.phrases.push(ph);
+      });
+    }
+    console.log('[GenesisBrain] Collective brain loaded — n:'+brain.n+' phrases:'+motifEng.phrases.length);
+  }catch(e){console.warn('[GenesisBrain] Brain load failed',e);}
+};
+
+let _brainSaveTimer=null;
+const collectiveBrainSave=()=>{
+  // Debounce — save at most once every 8 seconds
+  clearTimeout(_brainSaveTimer);
+  _brainSaveTimer=setTimeout(async()=>{
+    try{
+      const payload={
+        q:           brain.q,
+        n:           brain.n,
+        eps:         brain.eps,
+        bassWeights: bassBrain.weights,
+        bassHistory: bassBrain.history.slice(-16),
+        phrases:     motifEng.phrases.slice(-16),
+        _ts:         Date.now()
+      };
+      await fetch(SB_URL+'/rest/v1/genesis_brain',{
+        method:'POST',headers:SB_UH,
+        body:JSON.stringify({namespace:BRAIN_NS,version:Date.now(),payload})
+      });
+      console.log('[GenesisBrain] Collective brain saved — n:'+brain.n);
+    }catch(e){console.warn('[GenesisBrain] Brain save failed',e);}
+  },8000);
+};
+
 // -- THEORY --------------------------------------------------------------------
 const NOTE_NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const midiToNote=m=>`${NOTE_NAMES[((m%12)+12)%12]}${Math.floor(m/12)-1}`;
@@ -988,7 +1048,10 @@ function App(){
   const[inputEnergy,setInputEnergy]=useState(0);
   const[gainReduction,setGainReduction]=useState({master:0,drum:0,bass:0,sub:0});
   // Improv tab state
-  const[activeTab,setActiveTab]=useState('band');  // 'band' | 'improv'
+  const[activeTab,setActiveTab]=useState('band');  // 'band' | 'improv' | 'sim3'
+  const sim3CanvasRef=useRef(null);
+  const sim3AnimRef=useRef(null);
+  const sim3TrailsRef=useRef([]);
   const[phraseRecording,setPhraseRecording]=useState(false);
   const[completedPhrases,setCompletedPhrases]=useState([]);
   const[lastPhrase,setLastPhrase]=useState(null);
@@ -1048,6 +1111,9 @@ function App(){
     go();const iv=setInterval(go,20000);return()=>clearInterval(iv);
   },[]);
 
+  // -- COLLECTIVE BRAIN LOAD on mount ----------------------------------------
+  useEffect(()=>{collectiveBrainLoad();},[]);
+
   // -- GENESIS BRAIN: listen for sim3 updates via WebSocket -----------------
   useEffect(()=>{
     // Load current sim3 state on mount
@@ -1082,6 +1148,11 @@ function App(){
     ws.onerror=()=>ws.close();
     return()=>{clearInterval(hb);ws.close();};
   },[]);
+
+  // Sync latest values to window refs for sim3 canvas loop (avoids stale closures)
+  useEffect(()=>{window._sim3BallsLatest=sim3Balls;},[sim3Balls]);
+  useEffect(()=>{window._sim3ChaosLatest=sim3Chaos;},[sim3Chaos]);
+  useEffect(()=>{window._isPlayingLatest=isPlaying;},[isPlaying]);
 
   // -- AUTO CHAOS + DISPLAY --------------------------------------------------
   useEffect(()=>{
@@ -1418,7 +1489,7 @@ function App(){
     if(isPlaying){
       clearTimeout(AR.current.timerID);
       setIsPlaying(false);isPlayRef.current=false;
-      try{await db.from('athematic_history').insert([{chaos,density,swing,bpm,timeSignature,rootMidi:AR.current.rootMidi}]);}catch(e){}
+      try{await db.from('athematic_history').insert([{chaos,density,swing,bpm,timeSignature,rootMidi:AR.current.rootMidi}]);}catch(e){} collectiveBrainSave();
       hap.restart();
     }else{await startBand();}
   };
@@ -1434,7 +1505,7 @@ function App(){
     Object.values(voices).forEach(v=>v.tick());
 
     if(beat===0){
-      brain.auto(userRole,[0,4,7,11],chaos);
+      brain.auto(userRole,[0,4,7,11],chaos); collectiveBrainSave();
       if(Math.random()<chaos*0.2){
         const ms=[12,14,16,20];const m=ms[Math.floor(Math.random()*ms.length)];
         ar.stepsPerMeasure=m;setTS(m);
@@ -1771,6 +1842,71 @@ function App(){
     return()=>cancelAnimationFrame(tapAnimRef.current);
   },[]);
 
+  // -- SIM3 CANVAS RENDER ----------------------------------------------------
+  useEffect(()=>{
+    const trails=sim3TrailsRef.current;
+    let frame=0;
+    const render=()=>{
+      sim3AnimRef.current=requestAnimationFrame(render);
+      const canvas=sim3CanvasRef.current; if(!canvas)return;
+      const ctx=canvas.getContext('2d');
+      const W=canvas.width,H=canvas.height;
+      frame++;
+      ctx.fillStyle='rgba(5,8,16,0.18)'; ctx.fillRect(0,0,W,H);
+      const chaos=AR.current.chaos||0.3;
+      ctx.strokeStyle=`rgba(34,211,238,${0.03+chaos*0.07})`; ctx.lineWidth=0.5;
+      for(let x=0;x<W;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+      for(let y=0;y<H;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+      ctx.strokeStyle='rgba(34,211,238,0.08)'; ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(W/2,0);ctx.lineTo(W/2,H);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(0,H/2);ctx.lineTo(W,H/2);ctx.stroke();
+      const balls=window._sim3BallsLatest||[];
+      const chaos2=window._sim3ChaosLatest||0;
+      if(!balls||balls.length===0){
+        ctx.fillStyle='rgba(34,211,238,0.2)';ctx.font='11px monospace';ctx.textAlign='center';
+        ctx.fillText('◈ AWAITING SIM3 SIGNAL...',W/2,H/2);
+        ctx.fillText('Open sim3colts V3 tab to stream',W/2,H/2+18);
+        ctx.textAlign='left'; return;
+      }
+      balls.slice(0,30).forEach((b,i)=>{
+        if(!b||b.x==null)return;
+        const bx=b.x*W, by=b.y*H;
+        const col=b.color||'#22d3ee';
+        const winding=b.winding||0, glow=b.glow||0;
+        if(!trails[i])trails[i]=[];
+        trails[i].push({x:bx,y:by});
+        if(trails[i].length>60)trails[i].shift();
+        if(trails[i].length>1){
+          for(let j=1;j<trails[i].length;j++){
+            ctx.beginPath();ctx.moveTo(trails[i][j-1].x,trails[i][j-1].y);
+            ctx.lineTo(trails[i][j].x,trails[i][j].y);
+            ctx.strokeStyle=col;ctx.globalAlpha=Math.max(0,(j/trails[i].length)*0.5*glow);
+            ctx.lineWidth=0.8;ctx.stroke();
+          }
+        }
+        ctx.globalAlpha=1;
+        if(winding>0){
+          ctx.beginPath();ctx.arc(bx,by,6+(winding%15)*2,0,Math.PI*2);
+          ctx.strokeStyle=col;ctx.globalAlpha=0.12+glow*0.15;ctx.lineWidth=1;ctx.stroke();
+          ctx.globalAlpha=1;
+        }
+        ctx.shadowBlur=10+glow*20;ctx.shadowColor=col;ctx.fillStyle=col;
+        ctx.beginPath();ctx.arc(bx,by,3+glow*4,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+      });
+      ctx.fillStyle='rgba(5,8,16,0.7)';ctx.fillRect(0,0,W,28);
+      ctx.font='10px monospace';ctx.fillStyle='#22d3ee';
+      const chaosStr=chaos2?Number(chaos2).toFixed(3):'--';
+      ctx.fillText('◈ SIM3 LIVE  |  BALLS:'+balls.length+'  |  CHAOS:'+chaosStr+(window._isPlayingLatest?'  |  BAND: PLAYING':'  |  BAND: IDLE'),8,18);
+      if(window._isPlayingLatest&&AR.current.ctx){
+        const spb=60/((AR.current.lockedBpm||AR.current.bpm)*AR.current.warpMultiplier);
+        const phase=(AR.current.ctx.currentTime%spb)/spb;
+        if(phase<0.12){const pr=phase/0.12;ctx.strokeStyle=`rgba(255,80,80,${(1-pr)*0.6})`;ctx.lineWidth=2;ctx.beginPath();ctx.arc(W/2,H/2,20+pr*40,0,Math.PI*2);ctx.stroke();}
+      }
+    };
+    render();
+    return()=>cancelAnimationFrame(sim3AnimRef.current);
+  },[]);
+
   // -- FX --------------------------------------------------------------------
   const toggleFx=name=>{
     if(!AR.current.ctx){addLog('Start band first to enable effects.');return;}
@@ -1826,7 +1962,7 @@ function App(){
 
     {/* TAB BAR */}
     <div className="flex gap-2">
-      {[['band','BAND'],['improv','IMPROV']].map(([id,label])=>(
+      {[['band','BAND'],['improv','IMPROV'],['sim3','SIM3 VIZ']].map(([id,label])=>(
         <button key={id} onClick={()=>setActiveTab(id)}
           className={"px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest border transition-all "+(activeTab===id?'bg-cyan-500/15 text-cyan-300 border-cyan-500/40':'bg-slate-800/40 text-slate-500 border-slate-700 hover:border-slate-500')}>
           {label}
@@ -2199,8 +2335,8 @@ function App(){
             <div className="text-purple-400 font-black text-lg">{completedPhrases.length}</div>
           </div>
           <div className="bg-slate-900/60 rounded-lg p-2">
-            <div className="text-slate-600 uppercase text-[7px] mb-0.5">Supabase</div>
-            <div className="text-emerald-400 font-black text-lg">{isPlaying?'Live':'Ready'}</div>
+            <div className="text-slate-600 uppercase text-[7px] mb-0.5">Collective XP</div>
+            <div className="text-emerald-400 font-black text-lg">{brain.n}</div>
           </div>
           <div className="bg-slate-900/60 rounded-lg p-2">
             <div className="text-slate-600 uppercase text-[7px] mb-0.5">Neural Bass</div>
@@ -2279,12 +2415,68 @@ function App(){
 
     </div>)}
 
+    {/* SIM3 VIZ TAB */}
+    {activeTab==='sim3'&&(<div className="space-y-3">
+
+      <div className="bg-[#0b1120] border border-emerald-500/20 rounded-xl overflow-hidden">
+        <canvas ref={sim3CanvasRef} width={600} height={400}
+          style={{width:'100%',height:'auto',display:'block',background:'#050810'}}/>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-[#0b1120] border border-slate-800/60 rounded-xl p-3 text-center">
+          <div className="text-[7px] text-slate-600 uppercase tracking-widest mb-1">Balls Tracked</div>
+          <div className="text-emerald-400 font-black text-xl">{sim3Balls.length}</div>
+        </div>
+        <div className="bg-[#0b1120] border border-slate-800/60 rounded-xl p-3 text-center">
+          <div className="text-[7px] text-slate-600 uppercase tracking-widest mb-1">Chaos Ratio</div>
+          <div className="text-cyan-400 font-black text-xl">{sim3Chaos!=null?Number(sim3Chaos).toFixed(3):'--'}</div>
+        </div>
+        <div className="bg-[#0b1120] border border-slate-800/60 rounded-xl p-3 text-center">
+          <div className="text-[7px] text-slate-600 uppercase tracking-widest mb-1">Band Status</div>
+          <div className={`font-black text-xl ${isPlaying?'text-rose-400':'text-slate-600'}`}>{isPlaying?'LIVE':'IDLE'}</div>
+        </div>
+      </div>
+
+      {sim3Balls.length>0&&(
+        <div className="bg-[#0b1120] border border-slate-800/60 rounded-xl p-3">
+          <div className="text-[9px] text-slate-400 uppercase tracking-widest font-bold mb-2">Top Winding Nodes</div>
+          <div className="space-y-1">
+            {[...sim3Balls].sort((a,b)=>(b.winding||0)-(a.winding||0)).slice(0,6).map((b,i)=>(
+              <div key={i} className="flex items-center gap-2 bg-slate-900/60 rounded px-2 py-1">
+                <div style={{width:8,height:8,borderRadius:'50%',background:b.color||'#22d3ee',boxShadow:'0 0 6px '+(b.color||'#22d3ee')}}/>
+                <span className="text-[8px] font-mono text-slate-400">W#{b.winding||0}</span>
+                <span className="text-[8px] text-slate-600">x:{((b.x||0)*100).toFixed(1)}% y:{((b.y||0)*100).toFixed(1)}%</span>
+                <span className="text-[7px] ml-auto" style={{color:b.color||'#22d3ee'}}>glow:{((b.glow||0)*100).toFixed(0)}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="bg-[#0b1120] border border-cyan-500/10 rounded-xl p-3">
+        <div className="text-[9px] text-slate-400 uppercase tracking-widest font-bold mb-2">Sim3 → Band Feed</div>
+        <div className="text-[8px] text-slate-500 leading-relaxed">Chaos ratio from sim3colts V3 modulates band harmonic density. High chaos drives irrational FM ratios, wider scale exploration, neural bass growl mode. Low chaos locks closed orbits, melodic resolution, sub bass bloom.</div>
+        <div className="mt-2 h-2 rounded-full bg-slate-800 overflow-hidden">
+          <div className="h-full rounded-full transition-all duration-500"
+            style={{width:((sim3Chaos||0)*100)+'%',background:'linear-gradient(90deg,#22d3ee,#f43f5e)'}}/>
+        </div>
+        <div className="flex justify-between text-[7px] text-slate-700 mt-0.5"><span>CLOSED ORBIT</span><span>CHAOS VOID</span></div>
+      </div>
+
+      <button onClick={togglePlay}
+        className={"w-full py-3 rounded-xl font-black text-sm uppercase tracking-widest "+(isPlaying?'bg-rose-500 text-white':'bg-emerald-500 text-slate-900')}>
+        {isPlaying?'HALT BAND':'START BAND'}
+      </button>
+
+    </div>)}
+
     {/* LOG -- always visible */}
     <div className="bg-black/50 border border-slate-800/50 rounded-xl p-2.5 h-24 overflow-y-auto space-y-0.5">
       {log.map((m,i)=><div key={i} className="text-[8px] text-slate-500 leading-relaxed">{m}</div>)}
     </div>
 
-    <p className="text-center text-[8px] text-slate-800 uppercase tracking-widest pb-1">Beyond Bound . Neural Bass . Phrase Memory . Deep Learning</p>
+    <p className="text-center text-[8px] text-slate-800 uppercase tracking-widest pb-1">Beyond Bound . Neural Bass . Collective Brain . Every Session Teaches</p>
   </div>
   </div>
   );
