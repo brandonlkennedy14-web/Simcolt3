@@ -128,7 +128,9 @@ const collectiveBrainLoad=async()=>{
         if(ph&&ph.ivs&&ph.ivs.length>0) motifEng.phrases.push(ph);
       });
     }
-    console.log('[GenesisBrain] Collective brain loaded — n:'+brain.n+' phrases:'+motifEng.phrases.length);
+    if(p.progression) progressionMemory.load(p.progression);
+    if(p.convergence) convergenceTracker.load(p.convergence);
+    console.log('[GenesisBrain] Collective brain loaded — n:'+brain.n+' phrases:'+motifEng.phrases.length+' progs:'+progressionMemory.library.length);
   }catch(e){console.warn('[GenesisBrain] Brain load failed',e);}
 };
 
@@ -145,6 +147,8 @@ const collectiveBrainSave=()=>{
         bassWeights: bassBrain.weights,
         bassHistory: bassBrain.history.slice(-16),
         phrases:     motifEng.phrases.slice(-16),
+        progression: progressionMemory.serialize(),
+        convergence: convergenceTracker.serialize(),
         _ts:         Date.now()
       };
       await fetch(SB_URL+'/rest/v1/genesis_brain',{
@@ -154,6 +158,147 @@ const collectiveBrainSave=()=>{
       console.log('[GenesisBrain] Collective brain saved — n:'+brain.n);
     }catch(e){console.warn('[GenesisBrain] Brain save failed',e);}
   },8000);
+};
+
+// -- LEARNING ENGINE A: CROSS-SENSE CHAOS REWARD ---------------------------
+// sim3 chaos directly rewards/punishes harmony choices.
+// High chaos + lydian/aug/dim = reward. Low chaos + maj/min = reward.
+// This wires the visual sim into the musical decision making.
+const chaosRewardEngine={
+  active: false,
+  lastChaos: 0.3,
+  update(chaos, chordType){
+    if(!this.active)return;
+    const ct=CHORDS[chordType]||CHORDS.maj;
+    // High chaos -> reward dissonant chords (fm ratio > 1.5)
+    // Low chaos  -> reward consonant chords (fm ratio < 1.35)
+    const isDissonant=ct.fm>=1.5;
+    const isChaotic=chaos>0.55;
+    const aligned=(isDissonant&&isChaotic)||(!isDissonant&&!isChaotic);
+    const rewardVal=aligned?0.85:0.25;
+    // Reward all intervals in current chord
+    ct.iv.forEach(iv=>brain.reward('lead',iv,rewardVal));
+    ct.iv.forEach(iv=>brain.reward('mid',iv,rewardVal));
+    // Reinforce bass brain with chaos signal
+    const inputs=bassBrain.history[bassBrain.history.length-1];
+    if(inputs){
+      bassBrain.weights=bassBrain.weights.map(row=>
+        row.map((w,i)=>Math.max(-2,Math.min(2,
+          w + 0.018*(chaos - this.lastChaos)*(inputs[i]||0)*Math.tanh(w)
+        )))
+      );
+    }
+    this.lastChaos=chaos;
+  }
+};
+
+// -- LEARNING ENGINE B: PROGRESSION MEMORY ---------------------------------
+// Tracks chord sequences across measures. When a sequence resolves well
+// (tension->release detected by chaos drop or user tap), it gets stored
+// and replayed/reinforced in future sessions.
+const progressionMemory={
+  active: false,
+  window: [],       // last 8 chord types
+  maxWindow: 8,
+  library: [],      // {seq, score, uses} — learned progressions
+  lastChaos: 0.3,
+  push(chordType, chaos){
+    if(!this.active)return;
+    this.window.push(chordType);
+    if(this.window.length>this.maxWindow)this.window.shift();
+    // Resolution detection: chaos dropped significantly this measure
+    const chaosDelta=this.lastChaos - chaos;
+    if(chaosDelta>0.08 && this.window.length>=3){
+      this.recordResolution(chaosDelta);
+    }
+    this.lastChaos=chaos;
+  },
+  recordResolution(strength){
+    const seq=this.window.slice(-4).join('-');
+    const existing=this.library.find(p=>p.seq===seq);
+    if(existing){
+      existing.score=Math.min(1,existing.score+strength*0.3);
+      existing.uses++;
+    }else{
+      this.library.push({seq,score:Math.min(1,strength),uses:1});
+      if(this.library.length>32)
+        this.library.sort((a,b)=>b.score-a.score).splice(32);
+    }
+    // Reinforce the Q-table for chords in this sequence
+    this.window.slice(-4).forEach(ct=>{
+      const def=CHORDS[ct];
+      if(def)def.iv.forEach(iv=>brain.reward('mid',iv,0.7+strength*0.3));
+    });
+  },
+  // Returns best next chord given current chord, or null
+  suggest(currentChord){
+    if(!this.active||this.library.length===0)return null;
+    const recent=this.window.slice(-2).join('-');
+    const candidates=this.library
+      .filter(p=>p.seq.startsWith(recent))
+      .sort((a,b)=>b.score-a.score);
+    if(!candidates.length)return null;
+    // Pick from top 3 weighted by score
+    const top=candidates.slice(0,3);
+    const total=top.reduce((s,c)=>s+c.score,0);
+    let r=Math.random()*total;
+    for(const c of top){
+      r-=c.score;
+      if(r<=0)return c.seq.split('-')[2]||null; // next chord in seq
+    }
+    return null;
+  },
+  // Serialize for Supabase save
+  serialize(){return{window:this.window,library:this.library.slice(0,32)};},
+  load(data){
+    if(data?.library)this.library=[...data.library];
+    if(data?.window)this.window=[...data.window];
+  }
+};
+
+// -- LEARNING ENGINE C: CONVERGENCE TRACKER --------------------------------
+// Tracks a rolling "musical tension" score across sessions.
+// Uses: chord dissonance over time, chaos variance, phrase completion rate.
+// Exposes a loss value the brain uses to adjust exploration rate (eps).
+const convergenceTracker={
+  active: false,
+  history: [],      // {tension, chaos, chordFm, ts}
+  loss: 0.5,        // 0=fully converged, 1=random
+  sessionScore: 0,
+  phrasesThisSession: 0,
+  push(chaos, chordType, phraseCount){
+    if(!this.active)return;
+    const ct=CHORDS[chordType]||CHORDS.maj;
+    const tension=ct.fm*(0.5+chaos*0.5);
+    this.history.push({tension,chaos,chordFm:ct.fm,ts:Date.now()});
+    if(this.history.length>64)this.history.shift();
+    this.phrasesThisSession=phraseCount;
+    this._recalc();
+  },
+  _recalc(){
+    if(this.history.length<4)return;
+    const recent=this.history.slice(-16);
+    // Variance of tension = how much the music is moving
+    const mean=recent.reduce((s,h)=>s+h.tension,0)/recent.length;
+    const variance=recent.reduce((s,h)=>s+(h.tension-mean)**2,0)/recent.length;
+    // Good music has moderate variance (not static, not random)
+    const idealVariance=0.08;
+    const varLoss=Math.abs(variance-idealVariance)/idealVariance;
+    // Phrase completion rewards convergence
+    const phraseBonus=Math.min(1,this.phrasesThisSession/5)*0.3;
+    this.loss=Math.max(0,Math.min(1, varLoss*0.7 - phraseBonus));
+    // Feed loss back to brain exploration rate
+    if(convergenceTracker.active){
+      brain.eps=Math.max(0.04, Math.min(0.45, this.loss*0.4 + 0.04));
+    }
+    this.sessionScore=Math.round((1-this.loss)*100);
+  },
+  serialize(){return{history:this.history.slice(-32),loss:this.loss,sessionScore:this.sessionScore};},
+  load(data){
+    if(data?.history)this.history=[...data.history];
+    if(typeof data?.loss==='number')this.loss=data.loss;
+    if(typeof data?.sessionScore==='number')this.sessionScore=data.sessionScore;
+  }
 };
 
 // -- THEORY --------------------------------------------------------------------
@@ -1049,6 +1194,9 @@ function App(){
   const[gainReduction,setGainReduction]=useState({master:0,drum:0,bass:0,sub:0});
   // Improv tab state
   const[activeTab,setActiveTab]=useState('band');  // 'band' | 'improv' | 'sim3'
+  const[learningMode,setLearningMode]=useState('none'); // 'none'|'chaos'|'progression'|'convergence'
+  const[convergenceScore,setConvergenceScore]=useState(0);
+  const[progressionSuggestion,setProgSuggestion]=useState(null);
   const sim3CanvasRef=useRef(null);
   const sim3AnimRef=useRef(null);
   const sim3TrailsRef=useRef([]);
@@ -1066,6 +1214,8 @@ function App(){
   const recordChunksRef=useRef([]);
   const[sim3Balls,setSim3Balls]=useState([]); // from genesis_brain sim3 namespace
   const[sim3Chaos,setSim3Chaos]=useState(null); // top-level chaos_ratio from sim3
+  const[smellData,setSmellData]=useState(null); // from smell_sim
+  const[techData,setTechData]=useState(null);   // from sim3colts_deep_learning
 
   const canvasRef=useRef(null);
   const tapCanvasRef=useRef(null);
@@ -1114,6 +1264,14 @@ function App(){
   // -- COLLECTIVE BRAIN LOAD on mount ----------------------------------------
   useEffect(()=>{collectiveBrainLoad();},[]);
 
+  // -- SYNC LEARNING MODE to engine objects --------------------------------
+  useEffect(()=>{
+    chaosRewardEngine.active    = learningMode==='chaos';
+    progressionMemory.active    = learningMode==='progression';
+    convergenceTracker.active   = learningMode==='convergence';
+    if(learningMode!=='none') addLog('[LEARN] Mode: '+learningMode.toUpperCase()+' activated');
+  },[learningMode]);
+
   // -- GENESIS BRAIN: listen for sim3 updates via WebSocket -----------------
   useEffect(()=>{
     // Load current sim3 state on mount
@@ -1142,6 +1300,14 @@ function App(){
         if(rec?.namespace==='sim3'&&rec.payload?.balls){
           setSim3Balls(rec.payload.balls);
           setSim3Chaos(rec.payload.chaos_ratio??null);
+        }
+        if(rec?.namespace==='smell'&&rec.payload){
+          setSmellData(rec.payload);
+          window._smellLatest=rec.payload;
+        }
+        if(rec?.namespace==='tech'&&rec.payload){
+          setTechData(rec.payload);
+          window._techLatest=rec.payload;
         }
       }catch(_){}
     };
@@ -1506,6 +1672,53 @@ function App(){
 
     if(beat===0){
       brain.auto(userRole,[0,4,7,11],chaos); collectiveBrainSave();
+      // -- LEARNING ENGINES: fire every measure ----------------------------
+      const sim3Ch=window._sim3ChaosLatest||chaos;
+      chaosRewardEngine.update(sim3Ch, chordType);
+      progressionMemory.push(chordType, sim3Ch);
+      convergenceTracker.push(sim3Ch, chordType, completedPhrases.length);
+      // Progression suggestion: override chord if memory has a strong suggestion
+      const sugg=progressionMemory.suggest(chordType);
+      if(sugg&&CHORDS[sugg]&&Math.random()<0.35){ar.chordType=sugg;setCChord(sugg);}
+      if(sugg)setProgSuggestion(sugg);
+      // Update convergence score display
+      setConvergenceScore(convergenceTracker.sessionScore);
+      // -- SMELL SENSE: dominant element biases chord choice ---------------
+      // assimilation elements (H, N) -> pull toward modal/minor chords
+      // repulsion elements (B)       -> push toward dissonant chords  
+      // structure elements (He,Li,Be,C,O) -> reinforce current chord
+      const smell=window._smellLatest;
+      if(smell?.dominant_logic){
+        const sLevel=smell.synthesis_level||0;
+        if(smell.dominant_logic==='assimilation'){
+          brain.reward(userRole,3,0.7+sLevel*0.2); // minor 3rd
+          brain.reward(userRole,10,0.65+sLevel*0.2); // minor 7th
+        }else if(smell.dominant_logic==='repulsion'){
+          brain.reward(userRole,6,0.75+sLevel*0.2); // tritone
+          brain.reward(userRole,1,0.6);              // minor 2nd
+        }else if(smell.dominant_logic==='structure'){
+          // reinforce whatever chord is playing
+          const ct=CHORDS[chordType]||CHORDS.maj;
+          ct.iv.forEach(iv=>brain.reward(userRole,iv,0.8+sLevel*0.15));
+        }
+        // If synthesis converging (>0.7) — lock in current patterns
+        if(sLevel>0.7){
+          ar.lockedRoot=ar.lockedRoot??rootMidi;
+          addLog('[SMELL] Synthesis converging — locking root '+midiToNote(rootMidi));
+        }
+      }
+      // -- TECH SENSE: atom grade affects density + bass mode ---------------
+      const tech=window._techLatest;
+      if(tech?.grade==='GRADE_A'&&tech.chaos!=null){
+        // High-grade atoms = increase density slightly
+        const newDens=Math.min(1,density+0.008);
+        ar.density=newDens;setDensity(newDens);
+      }
+      if(tech?.chaos!=null){
+        // Blend tech chaos with sim3 chaos for richer bass modulation
+        const blendedChaos=Math.max(chaos,(tech.chaos+chaos)*0.5);
+        bassBrain.update(ar.lockedRoot??rootMidi, blendedChaos, ((rootMidi%12)/12), beat);
+      }
       if(Math.random()<chaos*0.2){
         const ms=[12,14,16,20];const m=ms[Math.floor(Math.random()*ms.length)];
         ar.stepsPerMeasure=m;setTS(m);
@@ -1957,6 +2170,9 @@ function App(){
         <span className="text-[8px] bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full">{meterLabel} . {subLabel[subdivisions]||subdivisions+'div'}</span>
         <span className="text-[8px] bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full">{scaleMode}</span>
         <span className="text-[8px] bg-slate-800 text-cyan-400 border border-cyan-900 px-2 py-0.5 rounded-full">Brain {Math.round(brainQ*100)}%</span>
+        {learningMode!=='none'&&<span className={"text-[8px] px-2 py-0.5 rounded-full border "+(learningMode==='chaos'?'bg-cyan-500/10 text-cyan-300 border-cyan-800':learningMode==='progression'?'bg-purple-500/10 text-purple-300 border-purple-800':'bg-amber-500/10 text-amber-300 border-amber-800')}>{learningMode==='chaos'?'⚡ Cross-Sense':learningMode==='progression'?'◈ Prog Mem':'∿ Converge'}{learningMode==='convergence'?' '+convergenceScore+'%':''}</span>}
+        {smellData&&<span className="text-[8px] bg-emerald-500/10 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-full">◉ {smellData.dominant_element} {smellData.dominant_logic}</span>}
+        {techData&&<span className="text-[8px] bg-violet-500/10 text-violet-300 border border-violet-800 px-2 py-0.5 rounded-full">⬡ {techData.grade}</span>}
       </div>
     </header>
 
@@ -2343,6 +2559,47 @@ function App(){
             <div className="text-cyan-400 font-black text-lg">{Math.round(Math.min(100,bassBrain.history.length/32*100))}%</div>
           </div>
         </div>
+      </div>
+
+      {/* LEARNING MODE SELECTOR */}
+      <div className="bg-[#0b1120] border border-violet-500/25 rounded-xl p-3">
+        <div className="flex justify-between items-center mb-2">
+          <div className="text-[9px] text-violet-400 uppercase tracking-widest font-bold">Deep Learning Mode</div>
+          {learningMode!=='none'&&<span className="text-[7px] text-violet-300 animate-pulse">● ACTIVE</span>}
+        </div>
+        <div className="grid grid-cols-2 gap-1.5 mb-2">
+          {[
+            ['none',    'OFF',         'Standard Q-learning only','text-slate-500','border-slate-700'],
+            ['chaos',   'CROSS-SENSE', 'sim3 chaos rewards harmony','text-cyan-400','border-cyan-800'],
+            ['progression','PROG MEM', 'Learn chord sequences','text-purple-400','border-purple-800'],
+            ['convergence','CONVERGE', 'Loss fn + auto exploration','text-amber-400','border-amber-800'],
+          ].map(([id,label,desc,col,border])=>(
+            <button key={id} onClick={()=>setLearningMode(id)}
+              className={"p-2 rounded-lg border text-left transition-all "+(learningMode===id?`bg-slate-800 ${border} ${col}`:`bg-slate-900/40 border-slate-800 text-slate-600 hover:border-slate-600`)}>
+              <div className={"text-[9px] font-bold uppercase tracking-wide "+(learningMode===id?col:'text-slate-500')}>{label}</div>
+              <div className="text-[7px] text-slate-600 mt-0.5 leading-tight">{desc}</div>
+            </button>
+          ))}
+        </div>
+        {learningMode==='chaos'&&(
+          <div className="text-[8px] text-cyan-400/70 bg-cyan-500/5 border border-cyan-500/10 rounded p-2">
+            sim3 chaos: <span className="font-bold">{sim3Chaos!=null?Number(sim3Chaos).toFixed(3):'waiting...'}</span>
+            {' · '}rewarding {(sim3Chaos||0)>0.55?'dissonant':'consonant'} chords
+          </div>
+        )}
+        {learningMode==='progression'&&(
+          <div className="text-[8px] text-purple-400/70 bg-purple-500/5 border border-purple-500/10 rounded p-2">
+            Library: <span className="font-bold">{progressionMemory.library.length} sequences</span>
+            {progressionSuggestion&&<span> · next: <span className="text-purple-300 font-bold">{CHORDS[progressionSuggestion]?.label||progressionSuggestion}</span></span>}
+          </div>
+        )}
+        {learningMode==='convergence'&&(
+          <div className="text-[8px] text-amber-400/70 bg-amber-500/5 border border-amber-500/10 rounded p-2">
+            Score: <span className="font-bold text-amber-300">{convergenceScore}/100</span>
+            {' · '}eps: <span className="font-mono">{brain.eps.toFixed(3)}</span>
+            {' · '}{convergenceScore>70?'converging ✓':convergenceScore>40?'learning...':'exploring'}
+          </div>
+        )}
       </div>
 
       {/* RECORDING */}
