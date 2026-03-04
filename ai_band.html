@@ -1216,6 +1216,7 @@ function App(){
   const[sim3Chaos,setSim3Chaos]=useState(null); // top-level chaos_ratio from sim3
   const[smellData,setSmellData]=useState(null); // from smell_sim
   const[techData,setTechData]=useState(null);   // from sim3colts_deep_learning
+  const[windingData,setWindingData]=useState(null); // from winding-room-square
 
   const canvasRef=useRef(null);
   const tapCanvasRef=useRef(null);
@@ -1308,6 +1309,10 @@ function App(){
         if(rec?.namespace==='tech'&&rec.payload){
           setTechData(rec.payload);
           window._techLatest=rec.payload;
+        }
+        if((rec?.namespace==='winding'||rec?.namespace==='winding_v3')&&rec.payload){
+          setWindingData(rec.payload);
+          window._windingLatest=rec.payload;
         }
       }catch(_){}
     };
@@ -1710,14 +1715,34 @@ function App(){
       // -- TECH SENSE: atom grade affects density + bass mode ---------------
       const tech=window._techLatest;
       if(tech?.grade==='GRADE_A'&&tech.chaos!=null){
-        // High-grade atoms = increase density slightly
         const newDens=Math.min(1,density+0.008);
         ar.density=newDens;setDensity(newDens);
       }
       if(tech?.chaos!=null){
-        // Blend tech chaos with sim3 chaos for richer bass modulation
         const blendedChaos=Math.max(chaos,(tech.chaos+chaos)*0.5);
         bassBrain.update(ar.lockedRoot??rootMidi, blendedChaos, ((rootMidi%12)/12), beat);
+      }
+      // -- WINDING SENSE: winding room struct_ratio biases root note --------
+      // High struct_ratio (ordered trajectories) = reward perfect 5ths/4ths
+      // Low struct_ratio (chaotic) = reward chromatic/dissonant intervals
+      // Total winding number shifts bass octave register
+      const winding=window._windingLatest;
+      if(winding?.struct_ratio!=null){
+        const sr=winding.struct_ratio;
+        if(sr>0.6){
+          brain.reward('bass',7,0.85);  // perfect 5th
+          brain.reward('bass',5,0.80);  // perfect 4th
+          brain.reward('bass',0,0.90);  // root
+        }else if(sr<0.35){
+          brain.reward('bass',1,0.75);  // minor 2nd
+          brain.reward('bass',6,0.70);  // tritone
+          brain.reward('bass',11,0.65); // major 7th
+        }
+        // Winding number total modulates bass warp multiplier
+        if(winding.total_winding>0){
+          const windBoost=Math.min(0.3,(winding.total_winding/500)*0.3);
+          ar.warpMultiplier=Math.max(0.8,Math.min(1.4,1.0+windBoost));
+        }
       }
       if(Math.random()<chaos*0.2){
         const ms=[12,14,16,20];const m=ms[Math.floor(Math.random()*ms.length)];
@@ -2173,6 +2198,7 @@ function App(){
         {learningMode!=='none'&&<span className={"text-[8px] px-2 py-0.5 rounded-full border "+(learningMode==='chaos'?'bg-cyan-500/10 text-cyan-300 border-cyan-800':learningMode==='progression'?'bg-purple-500/10 text-purple-300 border-purple-800':'bg-amber-500/10 text-amber-300 border-amber-800')}>{learningMode==='chaos'?'⚡ Cross-Sense':learningMode==='progression'?'◈ Prog Mem':'∿ Converge'}{learningMode==='convergence'?' '+convergenceScore+'%':''}</span>}
         {smellData&&<span className="text-[8px] bg-emerald-500/10 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-full">◉ {smellData.dominant_element} {smellData.dominant_logic}</span>}
         {techData&&<span className="text-[8px] bg-violet-500/10 text-violet-300 border border-violet-800 px-2 py-0.5 rounded-full">⬡ {techData.grade}</span>}
+        {windingData&&<span className="text-[8px] bg-rose-500/10 text-rose-300 border border-rose-800 px-2 py-0.5 rounded-full">∞ W{windingData.total_winding||0}</span>}
       </div>
     </header>
 
