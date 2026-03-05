@@ -411,6 +411,15 @@ const hap={
 // Sub bus is low-passed at 120Hz so it only contains true sub frequencies.
 // Drum bus has high-pass at 30Hz to prevent sub clash with kick sub layer.
 
+// Auto-disconnect nodes when they stop -- keeps AudioContext graph lean
+// Without this, stopped nodes accumulate forever and choke weak devices
+function autoClean(node, ...connected){
+  node.onended = function(){
+    try{ node.disconnect(); }catch(e){}
+    connected.forEach(function(n){try{n.disconnect();}catch(e){}});
+  };
+}
+
 class AudioBus{
   constructor(){
     this.ctx=null;this.inited=false;
@@ -729,20 +738,16 @@ const motifEng=new MotifEngine();
 const DeviceComp = (() => {
   const cores = navigator.hardwareConcurrency || 2;
   const mem   = navigator.deviceMemory || 4;
-  // Real stress test -- mix of float math, memory access, branching
-  // Same work a synth does: trig, sqrt, array writes
+  // Non-blocking benchmark: use a small loop that runs fast on all devices
+  // then scale by core/memory. We DON'T want to freeze the main thread.
   const t0    = performance.now();
   let _x = 0;
-  const _buf = new Float32Array(4096);
-  for(let i=0;i<200000;i++){
-    _x += Math.sqrt(i) * Math.sin(i * 0.001);
-    _buf[i & 4095] = _x * 0.0001;
-  }
+  for(let i=0;i<20000;i++) _x += Math.sqrt(i) * Math.sin(i*0.001);
   const bench = performance.now() - t0;
-  // bench: fast device ~8ms, mid ~25ms, weak phone ~80ms+
-  const coreScore = Math.min(1, (cores - 2) / 6);
-  const memScore  = Math.min(1, (mem  - 1) / 7);
-  const perfScore = Math.max(0, Math.min(1, 1 - (bench - 8) / 80));
+  // bench: fast ~1ms, mid ~4ms, weak phone ~15ms+
+  const coreScore = Math.min(1, Math.max(0, (cores - 1) / 5));
+  const memScore  = Math.min(1, Math.max(0, (mem  - 1) / 7));
+  const perfScore = Math.max(0, Math.min(1, 1 - (bench - 1) / 20));
   const score     = coreScore*0.3 + memScore*0.3 + perfScore*0.4;
   console.log(`[DeviceComp] score=${score.toFixed(2)} cores=${cores} mem=${mem}GB bench=${bench.toFixed(1)}ms`);
   // Weak device = schedule FURTHER ahead so GC/browser pauses can't starve audio
@@ -950,6 +955,7 @@ function synthKick(ctx,t,warp,dest,inputEnergy=0.5){
   bg.gain.linearRampToValueAtTime(0.0001,t+decay+0.04);
   bg.gain.setValueAtTime(0,t+decay+0.05);
   body.connect(bg);bg.connect(dest);body.start(t);body.stop(t+decay+0.06);
+  autoClean(body, bg);
 
   // -- SUB LAYER: unique overtone content shaped by s.sub and s.color -----
   // Mix of sine + soft saturation for physical feel (deaf users)
@@ -966,6 +972,7 @@ function synthKick(ctx,t,warp,dest,inputEnergy=0.5){
   const subMix=ctx.createGain();subMix.gain.value=1;
   sg1.connect(subMix);sg2.connect(subMix);subMix.connect(dist);dist.connect(dest);
   sub1.start(t);sub2.start(t);sub1.stop(t+decay*1.6);sub2.stop(t+decay*1.0);
+  autoClean(sub1,sg1,subMix,dist);autoClean(sub2,sg2);
 
   // -- CLICK: unique high-freq transient, pitch and duration vary per hit --
   const ckFreq=(220+s.click*280)*warp;
@@ -974,8 +981,9 @@ function synthKick(ctx,t,warp,dest,inputEnergy=0.5){
   click.frequency.exponentialRampToValueAtTime(ckFreq*0.18,t+0.038/warp);
   const cg=ctx.createGain();
   cg.gain.setValueAtTime(s.click*0.45,t);
-  cg.gain.exponentialRampToValueAtTime(0.001,t+(0.030+s.click*0.025)/warp);
+  cg.gain.linearRampToValueAtTime(0.0001,t+(0.030+s.click*0.025)/warp);
   click.connect(cg);cg.connect(dest);click.start(t);click.stop(t+0.065/warp);
+  autoClean(click,cg);
 }
 
 function synthSnare(ctx,t,chaos,warp,dest,inputTight=0.5){
@@ -993,6 +1001,7 @@ function synthSnare(ctx,t,chaos,warp,dest,inputTight=0.5){
   bg.gain.linearRampToValueAtTime(0.0001,t+(0.13+s.decay*0.08)/warp);
   bg.gain.setValueAtTime(0,t+(0.14+s.decay*0.08)/warp);
   body.connect(bg);bg.connect(dest);body.start(t);body.stop(t+(0.15+s.decay*0.08)/warp);
+  autoClean(body,bg);
 
   // -- RING: metallic overtone, unique ratio and decay ---------------------
   if(s.color>0.3){  // not every hit has ring -- variation
@@ -1000,7 +1009,7 @@ function synthSnare(ctx,t,chaos,warp,dest,inputTight=0.5){
     ring.frequency.value=bodyFreq*(1.4+s.color*0.8);  // unique ring pitch
     const rg=ctx.createGain();
     rg.gain.setValueAtTime(s.color*0.22,t);
-    rg.gain.exponentialRampToValueAtTime(0.001,t+(0.06+s.color*0.06)/warp);
+    rg.gain.linearRampToValueAtTime(0.0001,t+(0.06+s.color*0.06)/warp);
     ring.connect(rg);rg.connect(dest);ring.start(t);ring.stop(t+0.16/warp);
   }
 
@@ -1017,8 +1026,9 @@ function synthSnare(ctx,t,chaos,warp,dest,inputTight=0.5){
   }
   const crack=ctx.createBufferSource();crack.buffer=crBuf;
   const ckHpf=ctx.createBiquadFilter();ckHpf.type='highpass';ckHpf.frequency.value=(2200+s.click*2800)*warp;
-  const cg=ctx.createGain();cg.gain.setValueAtTime(s.click*0.90,t);cg.gain.exponentialRampToValueAtTime(0.001,t+0.045/warp);
+  const cg=ctx.createGain();cg.gain.setValueAtTime(s.click*0.90,t);cg.gain.linearRampToValueAtTime(0.0001,t+0.045/warp);
   crack.connect(ckHpf);ckHpf.connect(cg);cg.connect(dest);crack.start(t);
+  autoClean(crack,ckHpf,cg);
 
   // -- TAIL: snare wire noise -- unique length, brightness, and texture ------
   const tLen=Math.floor(ctx.sampleRate*(0.16+chaos*0.12+s.decay*0.08)/warp);
@@ -1032,8 +1042,9 @@ function synthSnare(ctx,t,chaos,warp,dest,inputTight=0.5){
   const tail=ctx.createBufferSource();tail.buffer=tBuf;
   const hpf=ctx.createBiquadFilter();hpf.type='highpass';hpf.frequency.value=(1200+chaos*2000+s.color*1200)*warp;
   const lpf=ctx.createBiquadFilter();lpf.type='lowpass';lpf.frequency.value=(8000+s.click*6000)*warp;
-  const tg=ctx.createGain();tg.gain.setValueAtTime(s.tone*0.52,t);tg.gain.exponentialRampToValueAtTime(0.001,t+(0.18+s.decay*0.10)/warp);
+  const tg=ctx.createGain();tg.gain.setValueAtTime(s.tone*0.52,t);tg.gain.linearRampToValueAtTime(0.0001,t+(0.18+s.decay*0.10)/warp);
   tail.connect(hpf);hpf.connect(lpf);lpf.connect(tg);tg.connect(dest);tail.start(t);
+  autoClean(tail,hpf,lpf,tg);
 }
 
 function synthHat(ctx,t,open,chaos,warp,dest,inputBright=0.5){
@@ -1051,7 +1062,7 @@ function synthHat(ctx,t,open,chaos,warp,dest,inputBright=0.5){
     const g=ctx.createGain();
     const vol=(i<2?0.28:0.12)*s.punch/(i+1);
     g.gain.setValueAtTime(vol,t);
-    g.gain.exponentialRampToValueAtTime(0.001,t+dur*(0.4+i*0.12));
+    g.gain.linearRampToValueAtTime(0.0001,t+dur*(0.4+i*0.12));
     o.connect(g);g.connect(metalMix);o.start(t);o.stop(t+dur+0.02);
   });
 
@@ -1068,8 +1079,9 @@ function synthHat(ctx,t,open,chaos,warp,dest,inputBright=0.5){
   const h2=ctx.createBiquadFilter();h2.type='bandpass';
   h2.frequency.value=(8000+s.color*5000)*warp;h2.Q.value=0.4+s.tone*0.5;
   const ng=ctx.createGain();
-  ng.gain.setValueAtTime(open?0.22:0.16,t);ng.gain.exponentialRampToValueAtTime(0.001,t+dur);
+  ng.gain.setValueAtTime(open?0.22:0.16,t);ng.gain.linearRampToValueAtTime(0.0001,t+dur);
   ns.connect(h1);h1.connect(h2);h2.connect(ng);ng.connect(dest);ns.start(t);
+  autoClean(ns,h1,h2,ng);
 }
 
 // -- SUB BASS: dedicated sub instrument, routes to subBus (below 120Hz) --------
@@ -1145,14 +1157,14 @@ function synthSubBass(ctx, t, note, chaos, warp, windBoost=0, beat=0){
   const g2=ctx.createGain();
   const h2vol=nn.harmonicMix*0.28+s.color*0.08;
   g2.gain.setValueAtTime(h2vol,t+attackT*0.5);
-  g2.gain.exponentialRampToValueAtTime(0.001,t+holdTime*0.7);
+  g2.gain.linearRampToValueAtTime(0.0001,t+holdTime*0.7);
 
   // -- LAYER 3: 3rd harmonic -- adds growl, driven by chaos -------------
   const osc3=ctx.createOscillator(); osc3.type='sine'; osc3.frequency.value=f1*3;
   const g3=ctx.createGain();
   const h3vol=chaos*0.15*nn.harmonicMix+windBoost*0.06;
   g3.gain.setValueAtTime(h3vol,t+attackT);
-  g3.gain.exponentialRampToValueAtTime(0.001,t+holdTime*0.45);
+  g3.gain.linearRampToValueAtTime(0.0001,t+holdTime*0.45);
 
   // -- LAYER 4: FM sideband -- unique timbral complexity per note --------
   const fmCarrier=ctx.createOscillator(); fmCarrier.type='sine'; fmCarrier.frequency.value=f1;
@@ -1166,7 +1178,7 @@ function synthSubBass(ctx, t, note, chaos, warp, windBoost=0, beat=0){
   const g4=ctx.createGain();
   const fmVol=nn.filterCutoff*0.35+chaos*0.10;
   g4.gain.setValueAtTime(fmVol,t+attackT*0.3);
-  g4.gain.exponentialRampToValueAtTime(0.001,t+holdTime*0.55);
+  g4.gain.linearRampToValueAtTime(0.0001,t+holdTime*0.55);
 
   // -- LAYER 5: Neural waveshaper -- saturation amount is inferred -------
   const satCurve=new Float32Array(512);
@@ -1187,7 +1199,10 @@ function synthSubBass(ctx, t, note, chaos, warp, windBoost=0, beat=0){
   mix.connect(shaper); shaper.connect(lpf1); lpf1.connect(lpf2); lpf2.connect(dest);
 
   const stopT=t+holdTime+0.08;
-  [osc1,osc2,osc3,fmMod,fmCarrier].forEach(o=>{o.start(t);o.stop(stopT);});
+  [osc1,osc2,osc3,fmMod,fmCarrier].forEach(function(o){o.start(t);o.stop(stopT);});
+  autoClean(osc1,g1,mix,shaper,lpf1,lpf2);
+  autoClean(osc2,g2);autoClean(osc3,g3);
+  autoClean(fmCarrier,g4);autoClean(fmMod,fmDepth);
 }
 
 // -- NEURAL BASS ENGINE --------------------------------------------------------
@@ -1253,7 +1268,7 @@ function synthBass(ctx, t, note, chaos, warp, windBoost=0, inputChar=0.5, beat=0
     click.frequency.exponentialRampToValueAtTime(freq,t+0.02/warp);
     const cg=ctx.createGain();
     cg.gain.setValueAtTime(s.punch*0.55,t);
-    cg.gain.exponentialRampToValueAtTime(0.001,t+0.025/warp);
+    cg.gain.linearRampToValueAtTime(0.0001,t+0.025/warp);
     click.connect(cg); cg.connect(dest);
     click.start(t); click.stop(t+0.03/warp);
   }
@@ -1263,12 +1278,14 @@ function synthBass(ctx, t, note, chaos, warp, windBoost=0, inputChar=0.5, beat=0
   pres.frequency.value=freq*(2+nn.harmonicMix*0.5);
   const pg=ctx.createGain();
   pg.gain.setValueAtTime((s.color*0.12+nn.filterCutoff*0.06),t);
-  pg.gain.exponentialRampToValueAtTime(0.001,t+0.14/warp);
+  pg.gain.linearRampToValueAtTime(0.0001,t+0.14/warp);
   pres.connect(pg); pg.connect(dest);
   pres.start(t); pres.stop(t+0.18/warp);
+  autoClean(pres,pg);
 
   body.connect(flt); flt.connect(g); g.connect(dest);
   body.start(t); body.stop(t+decayTime+0.08);
+  autoClean(body,flt,g);
 }
 
 function synthMid(ctx,t,notes,chordType,chaos,warp,dest,windBoost=0){
@@ -1320,6 +1337,7 @@ function synthMid(ctx,t,notes,chordType,chaos,warp,dest,windBoost=0){
     const stopT=t+susT+0.01;
     mod.start(t);mod2.start(t);car.start(t);
     mod.stop(stopT);mod2.stop(stopT);car.stop(stopT);
+    autoClean(car,flt,g);autoClean(mod,mG);autoClean(mod2,mG2);
   });
 }
 
@@ -1372,6 +1390,7 @@ function synthLead(ctx,t,note,chaos,warp,dest,windBoost=0){
       vib.start(t);vib.stop(t+durT+0.01);
     }
     o.connect(master);o.start(t);o.stop(t+durT+0.01);
+    autoClean(o);
   }
   const vol=0.09+windBoost*0.04+s.punch*0.03;
   master.gain.setValueAtTime(0,t);
@@ -1468,7 +1487,8 @@ function App(){
   const mediaRecorderRef=useRef(null);
   const recordChunksRef=useRef([]);
   const[sim3Balls,setSim3Balls]=useState([]); // from genesis_brain sim3 namespace
-  const[sim3Chaos,setSim3Chaos]=useState(null); // top-level chaos_ratio from sim3
+  const[sim3Chaos,setSim3Chaos]=useState(null);
+  const[perfMode,setPerfMode]=useState(false); // top-level chaos_ratio from sim3
 
   const canvasRef=useRef(null);
   const tapCanvasRef=useRef(null);
@@ -1484,6 +1504,7 @@ function App(){
   const tapVizRef=useRef([]);
   const midiRef=useRef(null);
   const hapticModeRef=useRef('standard');
+  const perfModeRef=useRef(false);
   const deafModeRef=useRef(false);
   const confidenceRef=useRef(0);
 
@@ -1589,6 +1610,7 @@ function App(){
   useEffect(()=>{mutesRef.current=mutes;},[mutes]);
   useEffect(()=>{hapticModeRef.current=hapticMode;},[hapticMode]);
   useEffect(()=>{deafModeRef.current=deafMode;},[deafMode]);
+  useEffect(()=>{perfModeRef.current=perfMode;},[perfMode]);
 
   // -- WEB MIDI SETUP --------------------------------------------------------
   useEffect(()=>{
@@ -2105,10 +2127,11 @@ function App(){
     let frame=0,onsetRate=0;
     const fpsLimit=DeviceComp.score<0.35?2:DeviceComp.score<0.55?1:0; // skip frames
     let frameSkip=0;
-    const renderLoop=()=>{
+    const renderLoop=window._renderLoop=()=>{
       frameSkip++;
       if(fpsLimit>0&&frameSkip%( fpsLimit+1)!==0){requestRef.current=requestAnimationFrame(renderLoop);return;}
       frame++;
+      if(perfModeRef.current){requestRef.current=requestAnimationFrame(renderLoop);return;}
       const canvas=canvasRef.current;
       if(!canvas){requestRef.current=requestAnimationFrame(renderLoop);return;}
       const c=canvas.getContext('2d');
@@ -2266,7 +2289,7 @@ function App(){
 
   // -- TAP CANVAS RENDER -----------------------------------------------------
   useEffect(()=>{
-    const renderTap=()=>{
+    const renderTap=window._renderTap=()=>{
       const canvas=tapCanvasRef.current;
       if(!canvas){tapAnimRef.current=requestAnimationFrame(renderTap);return;}
       const c=canvas.getContext('2d');const W=canvas.width,H=canvas.height;
@@ -2418,7 +2441,13 @@ function App(){
         <p className="text-[8px] text-slate-600 tracking-[0.22em] uppercase">Beyond Bound . Neural Ensemble</p>
       </div>
       <div className="flex flex-wrap gap-1.5 justify-end">
-        {motifFlag&&<span className="text-[8px] bg-purple-500/15 text-purple-300 border border-purple-500/35 px-2 py-0.5 rounded-full animate-pulse">Echo Motif</span>}
+        {/* Perf mode toggle -- kills canvas on weak devices */}
+      <button onClick={()=>{
+        const next=!perfMode;setPerfMode(next);perfModeRef.current=next;
+      }} className={"text-[8px] px-2 py-0.5 rounded-full border "+(perfMode?'bg-emerald-500/10 text-emerald-400 border-emerald-500/30':'bg-slate-800 text-slate-500 border-slate-700')}>
+        {perfMode?'AUDIO ONLY':'[*] VIZ'}
+      </button>
+      {motifFlag&&<span className="text-[8px] bg-purple-500/15 text-purple-300 border border-purple-500/35 px-2 py-0.5 rounded-full animate-pulse">Echo Motif</span>}
         {keyChangeFlag&&<span className="text-[8px] bg-amber-400/15 text-amber-300 border border-amber-400/35 px-2 py-0.5 rounded-full animate-pulse">Key Change!</span>}
         {phraseRecording&&<span className="text-[8px] bg-rose-500/20 text-rose-300 border border-rose-500/40 px-2 py-0.5 rounded-full animate-pulse">REC Phrase...</span>}
         <span className="text-[8px] bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full">{meterLabel} . {subLabel[subdivisions]||subdivisions+'div'}</span>
