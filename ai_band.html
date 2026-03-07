@@ -102,6 +102,194 @@ const gbWrite=async(payload)=>{try{await fetch(SB_URL+'/rest/v1/genesis_brain',{
 // Result: the band gets smarter with every session from every user.
 const BRAIN_NS='band_brain';
 
+// -- BAND TASTE: aesthetic identity that evolves over time ------------------
+// The band develops preferences for: groove style, harmonic color, density,
+// tension/release timing. Persisted in Supabase alongside the Q-table.
+const bandTaste = {
+  // Groove archetype weights -- which patterns feel "like us"
+  // Each archetype is a 16-step kick/snare/hat template (1=strong, 0.5=maybe, 0=off)
+  grooveArchetypes: {
+    // name: [K0,K1..K15, S0..S15, H0..H15]  (16 steps each, 48 values)
+    fourOnFloor: {
+      k:[1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0],
+      s:[0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0],
+      h:[1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0],
+      label:'four-on-floor'
+    },
+    breakbeat: {
+      k:[1,0,0,0, 0,0,1,0, 1,0,0,1, 0,0,0,0],
+      s:[0,0,0,0, 1,0,0,1, 0,0,0,0, 1,0,1,0],
+      h:[1,1,0,1, 1,1,0,1, 1,1,0,1, 1,0,1,1],
+      label:'breakbeat'
+    },
+    halfTime: {
+      k:[1,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0],
+      s:[0,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,0,0],
+      h:[1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0],
+      label:'half-time'
+    },
+    bossaNova: {
+      k:[1,0,0,1, 0,0,1,0, 0,1,0,0, 1,0,0,0],
+      s:[0,0,1,0, 0,1,0,0, 0,0,1,0, 0,1,0,1],
+      h:[1,0,1,1, 0,1,1,0, 1,0,1,1, 0,1,1,0],
+      label:'bossa nova'
+    },
+    hiphop: {
+      k:[1,0,0,0, 0,0,0,1, 1,0,0,0, 0,1,0,0],
+      s:[0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,1],
+      h:[0,0,1,0, 0,0,1,0, 0,0,1,0, 0,0,1,1],
+      label:'hip-hop'
+    },
+    jazzSwing: {
+      k:[1,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,1,0],
+      s:[0,0,0,0, 1,0,0,1, 0,0,0,0, 1,0,0,0],
+      h:[1,0,1,1, 0,1,1,0, 1,0,1,1, 0,1,0,1],
+      label:'jazz swing'
+    }
+  },
+
+  // Current archetype weights (evolve over time)
+  archetypeWeights: {fourOnFloor:0.3, breakbeat:0.15, halfTime:0.15,
+                     bossaNova:0.15, hiphop:0.15, jazzSwing:0.1},
+
+  // Harmonic taste: preference weights per chord quality
+  chordTaste: {maj:0.5,min:0.5,dom7:0.4,maj7:0.4,min7:0.4,
+               quar:0.3,dim:0.2,aug:0.2,dom9:0.3,min11:0.3,lydian:0.3},
+
+  // Aesthetic dimensions (0-1)
+  darkness:    0.4,   // prefer minor/dim vs major/lyd
+  density:     0.5,   // how busy the arrangement feels
+  tension:     0.4,   // how long dissonance is sustained
+  groove:      0.6,   // rhythmic tightness vs looseness
+  space:       0.5,   // silence preference (higher = more rests)
+
+  // Pick groove archetype weighted by current taste
+  pickArchetype(){
+    const keys = Object.keys(this.archetypeWeights);
+    const total = keys.reduce((s,k)=>s+this.archetypeWeights[k],0);
+    let r = Math.random()*total;
+    for(const k of keys){ r-=this.archetypeWeights[k]; if(r<=0)return k; }
+    return keys[0];
+  },
+
+  // Get step probability for a drum voice at this beat
+  stepProb(voice, beat16, archetype, chaos){
+    const arc = this.grooveArchetypes[archetype];
+    if(!arc) return 0.5;
+    const base = arc[voice][beat16 % 16] || 0;
+    // Add chaos-scaled random variation
+    const jitter = chaos * 0.25 * (Math.random()-0.5);
+    return Math.max(0, Math.min(1, base + jitter));
+  },
+
+  // Reward an archetype when the music sounds good (winding high)
+  reinforceArchetype(name, reward){
+    if(!this.archetypeWeights[name]) return;
+    const lr = 0.05;
+    this.archetypeWeights[name] += lr*(reward - this.archetypeWeights[name]);
+    // Normalize
+    const total = Object.values(this.archetypeWeights).reduce((s,v)=>s+v,0);
+    for(const k of Object.keys(this.archetypeWeights))
+      this.archetypeWeights[k] /= total;
+  },
+
+  // Evolve taste dimensions based on what's been rewarded
+  evolve(windingEnergy, chaos){
+    const lr = 0.003;
+    if(windingEnergy > 0.6){
+      // Good energy -- lean toward current settings
+      this.density += lr*(chaos - this.density);
+    } else {
+      // Low energy -- try something different
+      this.darkness += lr*(0.5 - this.darkness);
+      this.space += lr*(0.6 - this.space);
+    }
+  },
+
+  // Serialize for Supabase
+  serialize(){ return {aw:this.archetypeWeights, ct:this.chordTaste,
+    dark:this.darkness, dens:this.density, tens:this.tension,
+    groove:this.groove, space:this.space}; },
+  load(d){
+    if(!d)return;
+    if(d.aw) Object.assign(this.archetypeWeights, d.aw);
+    if(d.ct) Object.assign(this.chordTaste, d.ct);
+    if(typeof d.dark==='number') this.darkness=d.dark;
+    if(typeof d.dens==='number') this.density=d.dens;
+    if(typeof d.tens==='number') this.tension=d.tens;
+    if(typeof d.groove==='number') this.groove=d.groove;
+    if(typeof d.space==='number') this.space=d.space;
+  }
+};
+
+// -- STRUCTURE ENGINE: autonomous musical form --------------------------------
+// Decides chord duration, phrase shape, section progression
+// Gives the band an actual musical arc instead of random wandering
+const structureEngine = {
+  // How many measures to stay on a chord based on context
+  chordDuration(chaos, sectionPhase, brain_n){
+    const base = sectionPhase==='chorus' ? 2
+               : sectionPhase==='bridge' ? 1
+               : sectionPhase==='verse'  ? 4
+               : 4; // intro/outro
+    // Less experienced brain plays longer (more stable), experienced brain varies more
+    const variety = Math.min(1, brain_n/300);
+    const jitter = Math.round((Math.random()-0.5) * variety * 2);
+    return Math.max(1, base + jitter);
+  },
+
+  // Pick a musically sensible next chord given the current one and taste
+  nextChord(current, chaos, taste_darkness, brain){
+    const PROGRESSIONS = {
+      // Common functional progressions -- each array is [next chords]
+      maj:   ['dom7','min7','maj7','min','quar','dom9'],
+      min:   ['min7','dom7','maj','quar','min11','dim'],
+      dom7:  ['maj','min','maj7','quar','dom9'],
+      maj7:  ['dom9','min7','min','quar','lydian'],
+      min7:  ['dom7','maj','min','dim','min11'],
+      quar:  ['maj','min','dom7','min7','maj7'],
+      dom9:  ['maj','min7','maj7','min','quar'],
+      min11: ['dom7','maj','min7','quar','dim'],
+      dim:   ['min','dom7','aug','min7'],
+      aug:   ['maj','min','dom7','maj7'],
+      lydian:['maj7','dom9','min7','quar'],
+    };
+    const options = (PROGRESSIONS[current] || PROGRESSIONS.maj);
+    // Bias toward dark chords if taste says so
+    const dark = taste_darkness > 0.55;
+    const darkChords = ['min','min7','min11','dim'];
+    const brightChords = ['maj','maj7','lydian','dom9'];
+    const biased = options.filter(c => dark
+      ? darkChords.includes(c) || Math.random()<0.4
+      : brightChords.includes(c) || Math.random()<0.4
+    );
+    const pool = biased.length ? biased : options;
+    // Use brain suggestion if available
+    const brainSugg = progressionMemory.suggest(current);
+    if(brainSugg && CHORDS[brainSugg] && Math.random()<0.5) return brainSugg;
+    return pool[Math.floor(Math.random()*pool.length)] || options[0];
+  },
+
+  // Build a 4-chord phrase sequence
+  buildPhrase(currentChord, chaos, taste_darkness, brain){
+    const seq = [currentChord];
+    for(let i=0;i<3;i++){
+      seq.push(this.nextChord(seq[seq.length-1], chaos, taste_darkness, brain));
+    }
+    return seq;
+  },
+
+  // Advance section based on phrase count
+  advanceSection(phraseCount){
+    if(phraseCount < 2) return 'intro';
+    if(phraseCount < 6) return 'verse';
+    if(phraseCount < 10) return 'chorus';
+    if(phraseCount < 12) return 'bridge';
+    if(phraseCount < 14) return 'verse';
+    return 'chorus'; // cycle
+  }
+};
+
 // -- GHOST BAND: silent learning mode when tab hidden -------------------------
 // Runs the harmony brain at 10x speed with no audio nodes created.
 // Keeps the collective Q-table evolving even when no one is listening.
@@ -111,23 +299,28 @@ const ghostBand={
   timer: null,
   measure: 0,
   
-  // Run N virtual measures of harmony evolution
+  // Run N virtual measures using real structure + taste
   runMeasures(n){
-    const chordKeys=Object.keys(CHORDS);
+    let ghostChord = Object.keys(CHORDS)[Math.floor(Math.random()*Object.keys(CHORDS).length)];
+    let seq = structureEngine.buildPhrase(ghostChord, 0.4, bandTaste.darkness, brain);
+    let pos = 0;
     for(let m=0;m<n;m++){
-      const chordType=chordKeys[Math.floor(Math.random()*chordKeys.length)];
-      const chaos=0.2+Math.random()*0.6;
-      brain.setChord(chordType);
-      brain.auto('lead',[0,4,7,11,12,14],chaos,chordType);
-      brain.auto('mid',(CHORDS[chordType]||CHORDS.maj).iv,chaos,chordType);
-      brain.auto('bass',[0,5,7],chaos*0.5,chordType);
-      // Reward consonant intervals more than dissonant
-      (CHORDS[chordType]||CHORDS.maj).iv.forEach(function(iv){
-        brain.reward('mid',iv,brain.con(iv)*(1-chaos*0.3),chordType);
-        brain.reward('lead',iv+12,brain.con(iv)*(0.8-chaos*0.2),chordType);
+      const chaos=0.2+Math.random()*0.5;
+      ghostChord = seq[pos % seq.length];
+      const ct = CHORDS[ghostChord]||CHORDS.maj;
+      brain.setChord(ghostChord);
+      // Reward all chord tones -- stronger reward for taste-aligned chords
+      const tasteBonus = bandTaste.chordTaste[ghostChord]||0.3;
+      ct.iv.forEach(function(iv){
+        const r = brain.con(iv)*(1-chaos*0.3)*tasteBonus*1.5;
+        brain.reward('mid', iv, r, ghostChord);
+        brain.reward('lead', iv+12, r*0.8, ghostChord);
+        brain.reward('bass', iv, brain.con(iv)*0.7, ghostChord);
       });
-      // Evolve progression memory
-      progressionMemory.push(chordType, chaos*0.5);
+      brain.auto('lead', ct.iv.map(function(v){return v+12;}), chaos, ghostChord);
+      progressionMemory.push(ghostChord, chaos*0.5);
+      // Advance sequence every 2-4 measures
+      if(m%3===0){ pos++; if(pos>=seq.length){pos=0; seq=structureEngine.buildPhrase(ghostChord,chaos,bandTaste.darkness,brain);} }
       this.measure++;
     }
   },
@@ -211,6 +404,8 @@ const collectiveBrainLoad=async()=>{
     if(p.progression) progressionMemory.load(p.progression);
     if(p.rhythmMem) rhythmMemory.load(p.rhythmMem);
     if(p.convergence) convergenceTracker.load(p.convergence);
+  if(p.taste) bandTaste.load(p.taste);
+  if(p.taste) bandTaste.load(p.taste);
     const voicingCount=Object.values(brain.voicingMem).reduce((s,a)=>s+a.length,0);
     console.log('[GenesisBrain] Loaded -- n:'+brain.n+' phrases:'+motifEng.phrases.length+' voicings:'+voicingCount);
   }catch(e){console.warn('[GenesisBrain] Brain load failed',e);}
@@ -223,7 +418,7 @@ const collectiveBrainSave=()=>{
     try{
       const payload={
         q:           brain.q,
-        voicingMem:  brain.voicingMem,   // chord shape memory
+        voicingMem:  brain.voicingMem,
         rhythmMem:   rhythmMemory.serialize(),
         n:           brain.n,
         eps:         brain.eps,
@@ -232,6 +427,7 @@ const collectiveBrainSave=()=>{
         phrases:     motifEng.phrases.slice(-16),
         progression: progressionMemory.serialize(),
         convergence: convergenceTracker.serialize(),
+        taste:       bandTaste.serialize(),
         _ts:         Date.now()
       };
       await fetch(SB_URL+'/rest/v1/genesis_brain',{
@@ -281,7 +477,7 @@ const chaosRewardEngine={
 // (tension->release detected by chaos drop or user tap), it gets stored
 // and replayed/reinforced in future sessions.
 const progressionMemory={
-  active: false,
+  active: true,
   window: [],       // last 8 chord types
   maxWindow: 8,
   library: [],      // {seq, score, uses} -- learned progressions
@@ -1371,58 +1567,76 @@ function synthBass(ctx, t, note, chaos, warp, windBoost=0, inputChar=0.5, beat=0
 
 function synthMid(ctx,t,notes,chordType,chaos,warp,dest,windBoost=0){
   const ct=CHORDS[chordType]||CHORDS.maj;
-  const s=drumSeed(); // unique timbre per chord hit
-  // FM ratio: chord type sets base, seed + chaos add variation
-  const fmR=ct.fm+(chaos*0.12-0.06)+(s.tone*0.08-0.04);
-  // Oscillator character varies per hit: sine/triangle/square mix
-  const carTypes=['sine','sine','triangle','sine'];
-  const modTypes=['sine','triangle','sine','square'];
-  // Filter character: unique resonance and cutoff per hit
-  const fltFreq=(1200+chaos*2800+s.color*1600+windBoost*400)*warp;
-  const fltQ=0.4+s.punch*1.8+chaos*1.2;
-  // Envelope shape: attack and sustain vary per hit
-  const atkT=(0.025+s.decay*0.04)/warp;
-  const susT=(0.95+s.tone*0.45+windBoost*0.3)/warp;
-  const maxVoices=DeviceComp.score<0.45?2:3; // max 3 voices -- 5 was too many nodes
-  notes.slice(0,maxVoices).forEach((note,idx)=>{
+  const s=drumSeed();
+  const dark=bandTaste.darkness;
+
+  // Chord character based on taste: dark=minor-flavored FM, bright=cleaner
+  const fmR=ct.fm*(1+dark*0.15)+(chaos*0.1-0.05)+(s.tone*0.06-0.03);
+
+  // Envelope
+  const atkT=(0.02+s.decay*0.035)/warp;
+  const susT=(1.1+s.tone*0.5+windBoost*0.35)/warp;
+  const maxVoices=DeviceComp.score<0.45?2:3;
+  const voiceNotes=notes.slice(0,maxVoices);
+
+  voiceNotes.forEach(function(note,idx){
     const freq=440*Math.pow(2,(note-69)/12)*warp;
-    // Each voice in the chord gets slightly different character
-    const vSeed=s.color+idx*0.13;
-    const car=ctx.createOscillator();const mod=ctx.createOscillator();
-    const mod2=ctx.createOscillator(); // second modulator for richer timbre
-    const mG=ctx.createGain();const mG2=ctx.createGain();
-    const flt=ctx.createBiquadFilter();const g=ctx.createGain();
-    car.type=carTypes[idx%4];
-    mod.type=modTypes[idx%4];
-    mod2.type='sine';
-    // Primary FM
-    car.frequency.value=freq*(1+s.sub*0.002); // tiny pitch variation per voice
-    mod.frequency.value=freq*(fmR+vSeed*0.03);
-    mG.gain.value=freq*(0.18+chaos*0.45+windBoost*0.12+s.punch*0.08);
-    mod.connect(mG);mG.connect(car.frequency);
-    // Secondary FM: adds complexity, unique ratio per hit
-    mod2.frequency.value=freq*(fmR*1.5+s.click*0.4);
-    mG2.gain.value=freq*(0.04+s.color*0.06)*chaos;
-    mod2.connect(mG2);mG2.connect(car.frequency);
-    // Filter: unique per hit, sweeps differently
+    const vS=s.color+idx*0.17+dark*0.1;
+
+    // Carrier: sine blended with triangle for warmth (not harsh square)
+    const car=ctx.createOscillator();
+    car.type=vS>0.7?'triangle':'sine';
+    car.frequency.value=freq;
+    // Slight chorus detune per voice -- makes chords feel thick not thin
+    car.detune.value=(idx===0?0:idx===1?-8:+8)+(s.punch*6-3);
+
+    // Modulator with unique ratio
+    const mod=ctx.createOscillator();
+    mod.type='sine';
+    mod.frequency.value=freq*fmR*(1+vS*0.04);
+    const mG=ctx.createGain();
+    // FM depth: more for jazz/dark, less for clean bright
+    mG.gain.value=freq*(0.18+dark*0.25+chaos*0.18+s.sub*0.12+windBoost*0.08);
+
+    // Second harmonic layer -- adds body
+    const harm=ctx.createOscillator();
+    harm.type='sine';
+    harm.frequency.value=freq*2.01;
+    const hG=ctx.createGain();
+    hG.gain.value=0.12+dark*0.08+s.tone*0.06;
+
+    // Resonant filter -- unique character per hit
+    const flt=ctx.createBiquadFilter();
     flt.type='lowpass';
-    flt.frequency.setValueAtTime(fltFreq*(1.4+vSeed*0.2),t);
-    flt.frequency.linearRampToValueAtTime(fltFreq*0.5,t+susT*0.8);
-    flt.Q.value=fltQ+vSeed*0.5;
-    const vol=(0.12+windBoost*0.03+s.punch*0.02)/Math.max(1,notes.length*0.7);
+    const fOpen=(1800+chaos*3000+s.color*2000+windBoost*500)*warp;
+    const fClose=(300+dark*400+chaos*200)*warp;
+    flt.frequency.setValueAtTime(fOpen,t);
+    flt.frequency.linearRampToValueAtTime(fClose,t+susT*0.6);
+    flt.Q.value=0.8+s.punch*2.2+chaos*1.4;
+
+    // Envelope
+    const g=ctx.createGain();
     g.gain.setValueAtTime(0,t);
-    g.gain.linearRampToValueAtTime(vol,t+atkT);
-    g.gain.linearRampToValueAtTime(0.0001,t+susT-0.008);
-    g.gain.setValueAtTime(0,t+susT);
-    car.connect(flt);flt.connect(g);g.connect(dest);
+    g.gain.linearRampToValueAtTime(0.22+windBoost*0.06,t+atkT);
+    g.gain.setValueAtTime(0.18+windBoost*0.04,t+susT*0.5);
+    g.gain.linearRampToValueAtTime(0.0001,t+susT);
+    g.gain.setValueAtTime(0,t+susT+0.005);
+
+    mod.connect(mG); mG.connect(car.frequency);
+    harm.connect(hG); hG.connect(flt);
+    car.connect(flt); flt.connect(g); g.connect(dest);
+
     const stopT=t+susT+0.01;
-    mod.start(t);mod2.start(t);car.start(t);
-    mod.stop(stopT);mod2.stop(stopT);car.stop(stopT);
-    autoClean(car,flt,g);autoClean(mod,mG);autoClean(mod2,mG2);
+    mod.start(t); mod.stop(stopT);
+    car.start(t); car.stop(stopT);
+    harm.start(t); harm.stop(stopT);
+    autoClean(car,flt,g);
+    autoClean(mod,mG);
+    autoClean(harm,hG);
   });
 }
 
-// Supersaw lead -- unique timbre, portamento, and waveshape per note
+
 function synthLead(ctx,t,note,chaos,warp,dest,windBoost=0){
   const s=drumSeed(); // unique seed per note
   const freq=440*Math.pow(2,(note-69)/12)*warp;
@@ -1690,6 +1904,12 @@ function App(){
     userRole:'unknown',scale:SCALES.major,chordType:'maj',
     lockedBpm:null,lockedSwing:null,lockedRoot:null,
     tick:0,inputEnergy:0.5,
+    // Autonomous structure
+    measureCount:0,          // measures played since last chord change
+    measuresThisChord:0,     // how many measures to stay on this chord
+    phrasePosition:0,        // 0-3 position within a 4-chord phrase
+    targetChordSeq:[],       // upcoming chord sequence the band is working toward
+    structurePhase:'intro',  // intro | verse | chorus | bridge | outro
   });
 
   const addLog=msg=>setLog(p=>[`[${new Date().toLocaleTimeString()}] ${msg}`,...p].slice(0,14));
@@ -2164,19 +2384,52 @@ function App(){
     brain.setChord(chordType);
 
     if(beat===0){
+      ar.measureCount=(ar.measureCount||0)+1;
+      ar.measuresThisChord=(ar.measuresThisChord||0)+1;
+      // Evolve taste based on current energy
+      const windingEnergy=voices.lead.winding*0.5+voices.mid.winding*0.3+voices.bass.winding*0.2;
+      bandTaste.evolve(windingEnergy, chaos);
       brain.auto(userRole,[0,4,7,11],chaos,chordType); collectiveBrainSave();
       // Commit last measure's rhythm pattern to memory
       const windingSum=(voices.drum.winding+voices.bass.winding+voices.mid.winding+voices.lead.winding)*0.25;
       rhythmMemory.commitMeasure(chordType, windingSum, stepsPerMeasure);
-      // -- LEARNING ENGINES: fire every measure ----------------------------
+      // -- LEARNING ENGINES --------------------------------------------------
       const sim3Ch=window._sim3ChaosLatest||chaos;
       chaosRewardEngine.update(sim3Ch, chordType);
       progressionMemory.push(chordType, sim3Ch);
       convergenceTracker.push(sim3Ch, chordType, completedPhrases.length);
-      // Progression suggestion: override chord if memory has a strong suggestion
+
+      // -- STRUCTURE: autonomous chord changes --------------------------------
+      // Build a target sequence if we don't have one
+      if(!ar.targetChordSeq || ar.targetChordSeq.length===0){
+        ar.targetChordSeq = structureEngine.buildPhrase(
+          chordType, chaos, bandTaste.darkness, brain
+        );
+        ar.phrasePosition = 0;
+        ar.measuresThisChord = 0;
+        ar.measuresPerChord = structureEngine.chordDuration(chaos, ar.structurePhase||'verse', brain.n);
+        ar.structurePhase = structureEngine.advanceSection(Math.floor(ar.measureCount/4));
+      }
+      // Change chord when we've played enough measures on this one
+      if(ar.measuresThisChord >= ar.measuresPerChord){
+        ar.phrasePosition = ((ar.phrasePosition||0)+1) % ar.targetChordSeq.length;
+        const nextC = ar.targetChordSeq[ar.phrasePosition];
+        if(nextC && CHORDS[nextC]){
+          ar.chordType = nextC; setCChord(nextC);
+        }
+        ar.measuresThisChord = 0;
+        ar.measuresPerChord = structureEngine.chordDuration(chaos, ar.structurePhase||'verse', brain.n);
+        // When we complete a phrase (position wraps to 0), build a new one
+        if(ar.phrasePosition===0){
+          ar.targetChordSeq = structureEngine.buildPhrase(
+            ar.chordType, chaos, bandTaste.darkness, brain
+          );
+          setProgSuggestion(ar.targetChordSeq.join(' > '));
+        }
+      }
+      // Still allow manual brain suggestion to interject occasionally
       const sugg=progressionMemory.suggest(chordType);
-      if(sugg&&CHORDS[sugg]&&Math.random()<0.35){ar.chordType=sugg;setCChord(sugg);}
-      if(sugg)setProgSuggestion(sugg);
+      if(sugg&&CHORDS[sugg]&&Math.random()<0.15){ar.chordType=sugg;setCChord(sugg);}
       // Update convergence score display
       setConvergenceScore(convergenceTracker.sessionScore);
       if(Math.random()<chaos*0.2){
@@ -2231,20 +2484,45 @@ function App(){
     const bb=Math.floor(stepsPerMeasure/2);
     const sup={drum:userRole==='drum',bass:userRole==='bass',mid:userRole==='mid',lead:userRole==='lead'};
 
-    // -- DRUMS -------------------------------------------------------------
+    // -- DRUMS (groove-archetype driven) ------------------------------------
     if(!sup.drum&&!mutes.drum){
-      const playK=beat===0?true:Math.random()<chaos*0.28*(hist.k?0.05:2.2)*(rSug.k?1.6:1.0);
-      const playS=(beat===bb||beat===bb+4)?true:Math.random()<chaos*0.18*(hist.s?0.04:2.1)*(rSug.s?1.5:1.0);
-      const playH=Math.random()<density*0.88*(hist.h?0.55:1.4)*(rSug.h?1.3:1.0);
-      const openH=Math.random()<chaos*0.09;
-      if(playK){synthKick(ctx,time,warpMultiplier,bus.getInput('drum'),ie);voices.drum.play();
+      // Pick archetype once per measure (beat 0), carry it forward
+      if(beat===0){ ar._groove=bandTaste.pickArchetype(); }
+      const groove=ar._groove||'fourOnFloor';
+      const b16=beat%16;
+
+      // Groove template probability + rhythm memory suggestion
+      const kP=bandTaste.stepProb('k',b16,groove,chaos)*(rSug.k?1.4:1.0)*(hist.k?0.12:1.0);
+      const sP=bandTaste.stepProb('s',b16,groove,chaos)*(rSug.s?1.3:1.0)*(hist.s?0.12:1.0);
+      const hP=bandTaste.stepProb('h',b16,groove,chaos)*(rSug.h?1.2:1.0)*(hist.h?0.55:1.0)*density;
+
+      // Hard rules: kick always on beat 0, snare always on beat bb
+      const playK=beat===0?true:Math.random()<kP;
+      const playS=beat===bb?true:Math.random()<sP;
+      const playH=Math.random()<hP;
+      const openH=Math.random()<chaos*0.12*(groove==='jazzSwing'?2:1);
+
+      if(playK){
+        synthKick(ctx,time,warpMultiplier,bus.getInput('drum'),ie);
+        voices.drum.play();
         rhythmMemory.mark(beat,stepsPerMeasure,{k:true});
-        if(hapticModeRef.current==='bass'||deafModeRef.current)hap.kick();else hap.tap();}
-      if(playS){synthSnare(ctx,time,chaos,warpMultiplier,bus.getInput('drum'),1-ie);voices.drum.play();
+        if(hapticModeRef.current==='bass'||deafModeRef.current)hap.kick();else hap.tap();
+      }
+      if(playS){
+        synthSnare(ctx,time,chaos,warpMultiplier,bus.getInput('drum'),1-ie);
+        voices.drum.play();
         rhythmMemory.mark(beat,stepsPerMeasure,{s:true});
-        if(hapticModeRef.current==='rhythm')hap.snare();}
-      if(playH){synthHat(ctx,time,openH,chaos,warpMultiplier,bus.getInput('drum'),ie);
-        rhythmMemory.mark(beat,stepsPerMeasure,{h:true});}
+        if(hapticModeRef.current==='rhythm')hap.snare();
+      }
+      if(playH){
+        synthHat(ctx,time,openH,chaos,warpMultiplier,bus.getInput('drum'),ie);
+        rhythmMemory.mark(beat,stepsPerMeasure,{h:true});
+      }
+
+      // Reward the current archetype when band energy is high
+      if(beat===bb && voices.drum.winding>0.5){
+        bandTaste.reinforceArchetype(groove, voices.drum.winding);
+      }
     }
 
     // -- EXCLUSION PRINCIPLE -----------------------------------------------
@@ -2254,7 +2532,11 @@ function App(){
     const midOpts =sup.mid ||mutes.mid ?[]:(bassAsserts?ct.iv.slice(2).map(v=>v+7):ct.iv);
     // Mid notes clamped to C3-C6 register
     const midBase=rootMidi>72?(rootMidi-12):rootMidi<48?(rootMidi+12):rootMidi;
-    const leadOpts=sup.lead||mutes.lead?[]:[12,14,(ct.iv[1]||4)+12,(ct.iv[2]||7)+12,19];
+    // Lead opts: taste-driven -- dark=minor 7th/9th, bright=major 3rd/6th
+    const leadColor = bandTaste.darkness > 0.5
+      ? [12, (ct.iv[1]||3)+12, (ct.iv[2]||7)+12, 10+12, 14+12, 17+12]  // dark: 7ths, 9ths
+      : [12, (ct.iv[1]||4)+12, (ct.iv[2]||7)+12, 9+12, 14+12, 19+12];  // bright: 6ths, 3rds
+    const leadOpts=sup.lead||mutes.lead?[]:leadColor;
 
     // -- SUB BASS + BASS -- alternating, never simultaneous -----------------
     // Sub owns downbeat (beat 0) and the half-note (beat 8 in 4/4).
@@ -2309,11 +2591,26 @@ function App(){
     if(!sup.lead&&!mutes.lead&&leadOpts.length){
       const prob=density*(hist.l?0.14:1.6)*0.65*(DeviceComp.score<0.4?0.5:1.0);
       if(Math.random()<prob){
-        const iv=brain.choose(userRole,leadOpts,chaos,chordType);
-        synthLead(ctx,time,rootMidi+iv,chaos,warpMultiplier,bus.getInput('lead'),voices.lead.winding*0.07);
-        voices.lead.play();voices.lead.lastNote=rootMidi+iv;
-        // Reward the lead interval in this chord context
-        brain.reward('lead',iv,0.6+voices.lead.glow*0.2,chordType);
+        let iv=brain.choose(userRole,leadOpts,chaos,chordType);
+        // Melodic direction: bias toward stepwise motion (like a real musician)
+        // 60% of time, prefer notes close to the last note played
+        if(voices.lead.lastNote!=null && Math.random()<0.6){
+          const lastIv=(voices.lead.lastNote-rootMidi+144)%12;
+          const stepwise=leadOpts.filter(function(v){return Math.abs((v%12)-(lastIv%12))<=3;});
+          if(stepwise.length>0) iv=stepwise[Math.floor(Math.random()*stepwise.length)];
+        }
+        // Taste: darkness shapes note choice -- higher darkness favors flat 7/minor 3
+        if(bandTaste.darkness>0.65 && Math.random()<0.4){
+          const darkIvs=leadOpts.filter(function(v){return v%12===10||v%12===3||v%12===7;});
+          if(darkIvs.length) iv=darkIvs[Math.floor(Math.random()*darkIvs.length)];
+        }
+        const leadNote=rootMidi+iv;
+        // Lead note: clamp to melodic range (C4-C6, MIDI 60-84)
+        let ln=leadNote;
+        while(ln<60)ln+=12; while(ln>84)ln-=12;
+        synthLead(ctx,time,ln,chaos,warpMultiplier,bus.getInput('lead'),voices.lead.winding*0.07);
+        voices.lead.play();voices.lead.lastNote=ln;
+        brain.reward('lead',iv,0.6+voices.lead.glow*0.2+bandTaste.darkness*(iv%12===10||iv%12===3?0.2:-0.1),chordType);
       }
     }
 
@@ -2695,7 +2992,7 @@ function App(){
         {phraseRecording&&<span className="text-[8px] bg-rose-500/20 text-rose-300 border border-rose-500/40 px-2 py-0.5 rounded-full animate-pulse">REC Phrase...</span>}
         <span className="text-[8px] bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full">{meterLabel} . {subLabel[subdivisions]||subdivisions+'div'}</span>
         <span className="text-[8px] bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full">{scaleMode}</span>
-        <span className="text-[8px] bg-slate-800 text-cyan-400 border border-cyan-900 px-2 py-0.5 rounded-full" title={"Ghost measures: "+ghostBand.measure}>Brain {Math.round(brainQ*100)}% {!isPlaying&&ghostBand.running?"[*]":""}</span>
+        <span className="text-[8px] bg-slate-800 text-cyan-400 border border-cyan-900 px-2 py-0.5 rounded-full" title={"Ghost: "+ghostBand.measure+" measures | Groove: "+(AR.current._groove||"?")+" | Dark: "+Math.round(bandTaste.darkness*100)+"%"}>Brain {Math.round(brainQ*100)}% {!isPlaying&&ghostBand.running?"[g]":""}</span>
         <span className="text-[8px] bg-slate-800 text-slate-500 border border-slate-700 px-2 py-0.5 rounded-full" title={`Device score: ${DeviceComp.score.toFixed(2)} | Lookahead: ${DeviceComp.lookahead.toFixed(2)}s | Max BPM: ${DeviceComp.maxBpm}`}>[cfg] {DeviceComp.label}</span>
         {learningMode!=='none'&&<span className={"text-[8px] px-2 py-0.5 rounded-full border "+(learningMode==='chaos'?'bg-cyan-500/10 text-cyan-300 border-cyan-800':learningMode==='progression'?'bg-purple-500/10 text-purple-300 border-purple-800':'bg-amber-500/10 text-amber-300 border-amber-800')}>{learningMode==='chaos'?'!! Cross-Sense':learningMode==='progression'?'[*] Prog Mem':'~ Converge'}{learningMode==='convergence'?' '+convergenceScore+'%':''}</span>}
       </div>
@@ -2785,6 +3082,7 @@ function App(){
           <div className="absolute top-2 right-2 text-right">
             <div className="text-[8px] text-slate-500"><span className="text-white font-bold text-sm">{bpm}</span> BPM</div>
             <div className="text-[8px] text-purple-300">{midiToNote(detectedMidi)} . {currentChord}</div>
+            <div className="text-[7px] text-amber-400/80 font-mono">{AR.current.structurePhase||'intro'} . {AR.current.targetChordSeq?.join('>')||''}</div>
             {lockedIn&&<div className="text-[7px] text-cyan-400 animate-pulse">[lock] locked</div>}
           </div>
           {/* Neural bass mode indicator */}
