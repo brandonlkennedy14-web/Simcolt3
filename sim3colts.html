@@ -493,7 +493,7 @@
     }
 
     // ── Splash animation ──
-    let splashActive = true;
+    window.splashActive = true;
     (function() {
         const sc = document.getElementById('splash-canvas');
         const sctx = sc.getContext('2d');
@@ -513,8 +513,8 @@
             });
         }
 
-        function animSplash() {
-            if (!splashActive) return;
+        window.animSplash = function animSplash() {
+            if (!window.splashActive) return;
             sctx.fillStyle = 'rgba(2,6,23,0.18)';
             sctx.fillRect(0, 0, sc.width, sc.height);
             splashBalls.forEach(b => {
@@ -546,15 +546,15 @@
             });
             requestAnimationFrame(animSplash);
         }
-        animSplash();
+        window.animSplash();
     })();
 
     // ── Version launch ──
     let activeVersion = null;
     let v1Loop = null, v2Loop = null, v3Loop = null;
 
-    function hideSplash() {
-        splashActive = false;
+    window.hideSplash = function hideSplash() {
+        window.splashActive = false;
         const splash = document.getElementById('splash');
         splash.classList.add('splash-fade-out'); // opacity→0 + pointer-events:none via CSS
         setTimeout(() => { splash.style.display = 'none'; }, 520);
@@ -599,11 +599,11 @@
         const vs = document.getElementById('video-screen');
         if (vs) vs.style.display = 'none';
         // Restore splash
-        splashActive = true;
+        window.splashActive = true;
         const splash = document.getElementById('splash');
         splash.style.display = 'flex';
         splash.classList.remove('splash-fade-out');
-        requestAnimationFrame(() => animSplash());
+        requestAnimationFrame(() => window.animSplash && window.animSplash());
     }
 
     // ── Museum viewer ──
@@ -2668,7 +2668,7 @@ async function watchVideo(engine) {
     document.getElementById('video-engine-label').textContent = labels[engine] || engine.toUpperCase();
 
     // Hide splash immediately so it doesn't block interaction
-    hideSplash();
+    if (window.hideSplash) window.hideSplash(); else { window.splashActive=false; const _s=document.getElementById('splash'); _s.classList.add('splash-fade-out'); setTimeout(()=>{_s.style.display='none';},520); }
 
     const screen = document.getElementById('video-screen');
     const videoEl = document.getElementById('sim-video');
@@ -2711,11 +2711,11 @@ function closeVideoScreen() {
     currentVideoEngine = null;
     // Return to splash if no sim is running
     if (!activeVersion) {
-        splashActive = true;
+        window.splashActive = true;
         const splash = document.getElementById('splash');
         splash.style.display = 'flex';
         splash.classList.remove('splash-fade-out');
-        requestAnimationFrame(() => animSplash());
+        requestAnimationFrame(() => window.animSplash && window.animSplash());
     }
 }
 
