@@ -281,12 +281,45 @@ const structureEngine = {
 
   // Advance section based on phrase count
   advanceSection(phraseCount){
-    if(phraseCount < 2) return 'intro';
-    if(phraseCount < 6) return 'verse';
-    if(phraseCount < 10) return 'chorus';
-    if(phraseCount < 12) return 'bridge';
-    if(phraseCount < 14) return 'verse';
-    return 'chorus'; // cycle
+    const pos=phraseCount%16;
+    if(phraseCount<2)  return 'intro';
+    if(pos<4)          return 'verse';
+    if(pos<6)          return 'chorus';
+    if(pos===6)        return 'bridge';
+    if(pos<10)         return 'verse';
+    if(pos<12)         return 'chorus';
+    if(pos===12)       return 'outro';
+    return 'verse';
+  },
+
+  // - CALL / RESPONSE / TURNAROUND -
+  // Classical three-part phrase structure.
+  // CALL:       tension -- ascending line or unresolved chord
+  // RESPONSE:   partial answer -- mirrors call but lands differently
+  // TURNAROUND: resolves back to tonic or pivots to next section
+  motifPhase(measureWithinSection){
+    const pos=measureWithinSection%4;
+    if(pos===0||pos===1) return 'call';       // measures 1-2: statement
+    if(pos===2)          return 'response';   // measure 3: answer
+    return 'turnaround';                      // measure 4: resolve/pivot
+  },
+
+  // Returns density/chaos modifier for each motif phase
+  motifShape(phase){
+    if(phase==='call')       return {densityMod:1.0, chaosMod:0.8, leadMod:1.3};
+    if(phase==='response')   return {densityMod:0.8, chaosMod:1.1, leadMod:0.9};
+    if(phase==='turnaround') return {densityMod:1.2, chaosMod:0.5, leadMod:0.6};
+    return {densityMod:1.0, chaosMod:1.0, leadMod:1.0};
+  },
+
+  // Turnaround chord: ii-V-I style pivot back to tonic
+  turnaroundChord(currentChord){
+    const pivots={
+      maj:'dom7', min:'dom7', dom7:'maj', maj7:'maj',
+      min7:'dom7', quar:'min7', dom9:'maj', min11:'dom7',
+      dim:'min', aug:'dom7', lydian:'maj7',
+    };
+    return pivots[currentChord]||'dom7';
   }
 };
 
@@ -2087,6 +2120,29 @@ function App(){
   };
 
   // -- RESTART BAND ----------------------------------------------------------
+  // -- BAR-QUANTIZED INPUT -----------------------------------------------
+  // All user inputs (chord changes, flips, key changes) are buffered here
+  // and applied at the next bar boundary. This prevents mid-bar jarring
+  // transitions and lets the band finish the current rhythmic phrase.
+  const barQueueRef=useRef([]);
+  const lastBarBeatRef=useRef(0);
+
+  const queueInput=(fn, label)=>{
+    barQueueRef.current.push({fn, label, queued:Date.now()});
+    addLog('[Q] '+label+' queued -- applies at next bar');
+  };
+
+  // Called by scheduler on beat===0 to flush queued inputs
+  const flushBarQueue=()=>{
+    const q=barQueueRef.current;
+    if(!q.length)return;
+    barQueueRef.current=[];
+    q.forEach(function(item){
+      try{ item.fn(); addLog('[Q] Applied: '+item.label); }
+      catch(e){ console.error('[Q] Failed:',e); }
+    });
+  };
+
   // -- FLIP HANDLERS ----------------------------------------------------------
   const doFlipInversion=()=>{
     const ar=AR.current;
@@ -2336,6 +2392,219 @@ function App(){
   },[bpm]);
 
   // -- START / STOP ----------------------------------------------------------
+  // - PRE-RENDER ENGINE -
+  // Renders 60s of audio ahead using OfflineAudioContext.
+  // While it plays, renders the next chunk in background.
+  // Visual frames pre-computed as lightweight state snapshots.
+  const preRenderRef=useRef({
+    buffer:null,       // AudioBuffer: the pre-rendered chunk
+    source:null,       // AudioBufferSourceNode playing it back
+    startCtxTime:0,    // ctx.currentTime when playback started
+    startWallTime:0,   // Date.now() when playback started
+    chunkDuration:60,  // seconds per chunk
+    rendering:false,   // currently rendering next chunk?
+    visualFrames:[],   // [{beat,chordType,rootMidi,chaos,density,voices}]
+    frameIdx:0,        // current visual frame index
+    barQueue:[],       // queued user inputs, applied at next bar
+    inputLockBeat:-1,  // beat when current bar started
+  });
+
+  // Simulate the band brain forward in time, collecting events
+  // Returns {events, visualFrames} -- pure computation, no audio nodes
+  const simulateBand=(durationSec, startAR, startBrainState)=>{
+    const SR = DeviceComp.score<0.45?22050:44100;
+    const ar = {...startAR, ctx:{currentTime:0, sampleRate:SR}};
+    const bpm = ar.lockedBpm||ar.bpm||110;
+    const spb = 60.0/(bpm*(ar.warpMultiplier||1));
+    const stepDur = 0.25*spb;
+    const totalSteps = Math.ceil(durationSec/stepDur)+4;
+    const events=[]; // {t, type, note, velocity, voice, chordType, rootMidi}
+    const visualFrames=[]; // sampled at ~30fps
+    const FPS=30;
+    const frameDur=1/FPS;
+    let nextFrameT=0;
+
+    // Lightweight brain clone -- just the Q table for note choices
+    const qClone={...startBrainState};
+    const choose=(role,opts,chaos,ct)=>{
+      if(!opts||!opts.length)return opts[0];
+      let b=opts[0],bw=-Infinity;
+      for(const v of opts){
+        const k=`${role}_${((v%12)+12)%12}_${ct}`;
+        const w=((qClone[k]??0.5)*0.7+(qClone[`${role}_${((v%12)+12)%12}_global`]??0.5)*0.3);
+        if(w>bw){bw=w;b=v;}
+      }
+      return b;
+    };
+
+    let simChordType=ar.chordType||'maj';
+    let simRoot=ar.rootMidi||60;
+    let simMeasure=ar.measureCount||0;
+    let simMeasuresOnChord=ar.measuresThisChord||0;
+    let simMeasuresPerChord=ar.measuresPerChord||4;
+    let simPhrase=ar.targetChordSeq?[...ar.targetChordSeq]:[];
+    let simPhrasePos=ar.phrasePosition||0;
+    let simGroove=ar._groove||bandTaste.pickArchetype();
+    let simPhaseLabel=ar.structurePhase||'intro';
+    const simVoices={drum:{w:0},bass:{w:0,last:null},mid:{w:0},lead:{w:0,last:null}};
+    const simMutes=mutesRef.current||{};
+
+    for(let step=0;step<totalSteps;step++){
+      const t=step*stepDur;
+      if(t>=durationSec)break;
+      const beat=step%((ar.stepsPerMeasure||16));
+
+      // Measure boundary
+      if(beat===0){
+        simMeasure++;
+        simMeasuresOnChord++;
+        simGroove=bandTaste.pickArchetype();
+        if(simMeasuresOnChord>=simMeasuresPerChord){
+          if(!simPhrase.length){
+            simPhrase=structureEngine.buildPhrase(simChordType,ar.chaos||0.3,bandTaste.darkness,brain);
+          }
+          simPhrasePos=(simPhrasePos+1)%simPhrase.length;
+          simChordType=simPhrase[simPhrasePos]||simChordType;
+          simMeasuresOnChord=0;
+          simMeasuresPerChord=structureEngine.chordDuration(ar.chaos||0.3,simPhaseLabel,brain.n);
+          simPhaseLabel=structureEngine.advanceSection(Math.floor(simMeasure/4));
+          if(simPhrasePos===0)simPhrase=structureEngine.buildPhrase(simChordType,ar.chaos||0.3,bandTaste.darkness,brain);
+        }
+      }
+
+      const ct=CHORDS[simChordType]||CHORDS.maj;
+      const chaos=ar.chaos||0.3;
+      const density=ar.density||0.55;
+      const b16=beat%16;
+
+      // Drums
+      if(!simMutes.drum){
+        const kP=bandTaste.stepProb('k',b16,simGroove,chaos);
+        const sP=bandTaste.stepProb('s',b16,simGroove,chaos);
+        const hP=bandTaste.stepProb('h',b16,simGroove,chaos)*density;
+        if(beat===0||Math.random()<kP) events.push({t,type:'kick',v:0.8+Math.random()*0.2});
+        if(beat===8||Math.random()<sP)  events.push({t,type:'snare',v:0.6+Math.random()*0.3});
+        if(Math.random()<hP)            events.push({t,type:'hat',v:0.3+Math.random()*0.4,open:Math.random()<0.08});
+      }
+
+      // Bass (simplified -- pitch class + register)
+      if(!simMutes.bass&&(beat===0||beat===4||beat===8||beat===12||Math.random()<density*0.3)){
+        const bassPC=((simRoot+choose('bass',[0,5,7],chaos,simChordType))%12+12)%12;
+        let n=24+bassPC; while(n<28)n+=12; while(n>52)n-=12;
+        events.push({t,type:'bass',note:n,chordType:simChordType});
+        simVoices.bass.last=n;
+      }
+
+      // Mid chord (less frequent)
+      if(!simMutes.mid&&(beat===0||Math.random()<chaos*0.4*density)){
+        const ivs=ct.iv.slice(0,3);
+        const notes=ivs.map(v=>{let n2=simRoot+v;while(n2<48)n2+=12;while(n2>72)n2-=12;return n2;});
+        events.push({t,type:'mid',notes,chordType:simChordType});
+      }
+
+      // Lead (sparse)
+      if(!simMutes.lead&&Math.random()<density*0.35){
+        const iv=choose('lead',ct.iv.map(v=>v+12),chaos,simChordType);
+        let ln=simRoot+iv; while(ln<60)ln+=12; while(ln>84)ln-=12;
+        events.push({t,type:'lead',note:ln,chordType:simChordType});
+        simVoices.lead.last=ln;
+      }
+
+      // Visual frame snapshot
+      if(t>=nextFrameT){
+        visualFrames.push({
+          t, beat, chordType:simChordType, rootMidi:simRoot,
+          chaos, density, phase:simPhaseLabel,
+          groove:simGroove,
+          drumW:simVoices.drum.w, bassW:simVoices.bass.w,
+          midW:simVoices.mid.w, leadW:simVoices.lead.w,
+          kick:events[events.length-1]?.type==='kick',
+          snare:events[events.length-1]?.type==='snare',
+        });
+        nextFrameT+=frameDur;
+        // Update voice winding (fake)
+        simVoices.drum.w=Math.min(10,(simVoices.drum.w||0)*0.97+0.2);
+        simVoices.bass.w=Math.min(10,(simVoices.bass.w||0)*0.97+0.15);
+        simVoices.mid.w=Math.min(10,(simVoices.mid.w||0)*0.97+0.1);
+        simVoices.lead.w=Math.min(10,(simVoices.lead.w||0)*0.97+0.08);
+      }
+    }
+    return{events,visualFrames,endChordType:simChordType,endRoot:simRoot,endMeasure:simMeasure};
+  };
+
+  // Render events into an OfflineAudioContext and return an AudioBuffer
+  const renderEventsToBuffer=async(events,durationSec,baseAR)=>{
+    const SR=DeviceComp.score<0.45?22050:44100;
+    const offCtx=new OfflineAudioContext(2,Math.ceil(SR*durationSec),SR);
+    const offBus=new AudioBus();
+    offBus.init(offCtx);
+
+    for(const ev of events){
+      const t=ev.t;
+      const warp=baseAR.warpMultiplier||1;
+      const chaos=baseAR.chaos||0.3;
+      try{
+        if(ev.type==='kick')   synthKick(offCtx,t,warp,offBus.getInput('drum'),0.5);
+        if(ev.type==='snare')  synthSnare(offCtx,t,chaos,warp,offBus.getInput('drum'),0.5);
+        if(ev.type==='hat')    synthHat(offCtx,t,ev.open||false,chaos,warp,offBus.getInput('drum'),0.3);
+        if(ev.type==='bass')   synthBass(offCtx,t,ev.note,chaos,warp,0.05,0.5,0);
+        if(ev.type==='mid'&&ev.notes)
+          synthMid(offCtx,t,ev.notes,ev.chordType,chaos,warp,offBus.getInput('mid'),0.05);
+        if(ev.type==='lead')   synthLead(offCtx,t,ev.note,chaos,warp,offBus.getInput('lead'),0.05);
+      }catch(e){}
+    }
+    return await offCtx.startRendering();
+  };
+
+  const startPreRenderedBand=async()=>{
+    const ar=AR.current;
+    const pr=preRenderRef.current;
+    if(pr.rendering)return;
+    pr.rendering=true;
+    setLoadingBand(true);
+
+    try{
+      // 1. Simulate 60s
+      const sim=simulateBand(60,ar,brain.q);
+      pr.visualFrames=sim.visualFrames;
+      pr.frameIdx=0;
+
+      // 2. Render to AudioBuffer
+      const buf=await renderEventsToBuffer(sim.events,60,ar);
+      pr.buffer=buf;
+
+      // 3. Play it back
+      if(!ar.ctx) ar.ctx=(()=>{const SR=DeviceComp.score<0.45?22050:44100;try{return new(window.AudioContext||window.webkitAudioContext)({sampleRate:SR,latencyHint:'playback'});}catch(e){return new(window.AudioContext||window.webkitAudioContext)();}})();
+      if(ar.ctx.state==='suspended')await ar.ctx.resume();
+      bus.init(ar.ctx);
+
+      const src=ar.ctx.createBufferSource();
+      src.buffer=buf;
+      src.connect(ar.ctx.destination);
+      pr.source=src;
+      pr.startCtxTime=ar.ctx.currentTime;
+      pr.startWallTime=Date.now();
+      src.start(0);
+      ghostBand.stop();
+      setIsPlaying(true);isPlayRef.current=true;
+      setLoadingBand(false);
+      pr.rendering=false;
+      addLog('[Pre-render] 60s loaded. Visual + audio locked.');
+
+      // 4. While playing, render next chunk in background
+      src.onended=()=>{
+        if(isPlayRef.current) startPreRenderedBand();
+      };
+
+    }catch(e){
+      console.error('[Pre-render]',e);
+      pr.rendering=false;
+      setLoadingBand(false);
+      // Fall back to live mode
+      startBand();
+    }
+  };
+
   const startBand=async()=>{
     if(isPlayRef.current)return; // guard against double-start
     if(!AR.current.ctx)AR.current.ctx=(()=>{const SR=DeviceComp.score<0.45?22050:44100;try{return new(window.AudioContext||window.webkitAudioContext)({sampleRate:SR,latencyHint:'playback'});}catch(e){return new(window.AudioContext||window.webkitAudioContext)();}})();
@@ -2385,6 +2654,7 @@ function App(){
 
     if(beat===0){
       ar.measureCount=(ar.measureCount||0)+1;
+      flushBarQueue(); // Apply queued user inputs at bar boundary
       ar.measuresThisChord=(ar.measuresThisChord||0)+1;
       // Evolve taste based on current energy
       const windingEnergy=voices.lead.winding*0.5+voices.mid.winding*0.3+voices.bass.winding*0.2;
@@ -2589,7 +2859,8 @@ function App(){
 
     // -- LEAD -------------------------------------------------------------
     if(!sup.lead&&!mutes.lead&&leadOpts.length){
-      const prob=density*(hist.l?0.14:1.6)*0.65*(DeviceComp.score<0.4?0.5:1.0);
+      const motifShape=AR.current._motifShape||{densityMod:1,chaosMod:1,leadMod:1};
+      const prob=density*motifShape.leadMod*(hist.l?0.14:1.6)*0.65*(DeviceComp.score<0.4?0.5:1.0);
       if(Math.random()<prob){
         let iv=brain.choose(userRole,leadOpts,chaos,chordType);
         // Melodic direction: bias toward stepwise motion (like a real musician)
@@ -3082,7 +3353,7 @@ function App(){
           <div className="absolute top-2 right-2 text-right">
             <div className="text-[8px] text-slate-500"><span className="text-white font-bold text-sm">{bpm}</span> BPM</div>
             <div className="text-[8px] text-purple-300">{midiToNote(detectedMidi)} . {currentChord}</div>
-            <div className="text-[7px] text-amber-400/80 font-mono">{AR.current.structurePhase||'intro'} . {AR.current.targetChordSeq?.join('>')||''}</div>
+            <div className="text-[7px] text-amber-400/80 font-mono">{AR.current.structurePhase||'intro'} . {AR.current._motifPhase||'call'} . {AR.current.targetChordSeq?.join('>')||''}</div>
             {lockedIn&&<div className="text-[7px] text-cyan-400 animate-pulse">[lock] locked</div>}
           </div>
           {/* Neural bass mode indicator */}
@@ -3281,10 +3552,18 @@ function App(){
             </div>
           </div>
 
-          <button onClick={togglePlay}
-            className={"w-full py-3 rounded-xl font-black text-sm uppercase tracking-widest "+(isPlaying?'bg-rose-500 text-white':'bg-emerald-500 text-slate-900')}>
-            {isPlaying?'HALT BAND':'START BAND'}
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={async()=>{setPreRenderMode(true);await startPreRenderedBand();}}
+              disabled={isPlaying||loadingBand}
+              className={"py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all "+(loadingBand?'bg-slate-700 text-slate-400 animate-pulse':'bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40')}>
+              {loadingBand?'Rendering...':'Load Band'}
+            </button>
+            <button onClick={togglePlay}
+              className={"py-3 rounded-xl font-black text-xs uppercase tracking-widest "+(isPlaying?'bg-rose-500 text-white':'bg-emerald-500 text-slate-900')}>
+              {isPlaying?'Halt':'Live'}
+            </button>
+          </div>
+          {preRenderMode&&!isPlaying&&<div className="text-[7px] text-indigo-400 text-center animate-pulse">Next 60s rendering in background...</div>}
         </div>
       </div>
 
