@@ -223,33 +223,27 @@
 
 <!-- SPLASH NAV — defined immediately, window globals, zero deps -->
 <script>
+var _launching = false;
 window._doLaunch = function(v) {
-    // Immediately hide splash — no transitions, no class toggling
+    if (_launching) return; // guard double-tap
+    _launching = true;
+    setTimeout(function(){ _launching = false; }, 1000);
+
     var s = document.getElementById('splash');
     s.style.display = 'none';
     window.splashActive = false;
-    // Show correct sim root
-    document.getElementById('v1-root').style.display = (v==='v1') ? 'block' : 'none';
-    document.getElementById('v2-root').style.display = (v==='v2') ? 'block' : 'none';
-    document.getElementById('v3-root').style.display = (v==='v3') ? 'block' : 'none';
-    document.getElementById('v1-root').classList.toggle('active', v==='v1');
-    document.getElementById('v2-root').classList.toggle('active', v==='v2');
-    document.getElementById('v3-root').classList.toggle('active', v==='v3');
-    // Launch sim after a frame so display:block has painted
+    ['v1','v2','v3'].forEach(function(id) {
+        var r = document.getElementById(id+'-root');
+        r.style.display = (id===v) ? 'block' : 'none';
+        r.classList.toggle('active', id===v);
+    });
+    // Wait two frames so display:block has painted and canvas has dimensions
     requestAnimationFrame(function() {
-        if (v==='v1' && window.initV1) window.initV1();
-        else if (v==='v2' && window.initV2) window.initV2();
-        else if (v==='v3' && window.initV3) window.initV3();
-        else {
-            // initVX not ready yet — wait for museum load
-            if (window.loadSharedMuseum) {
-                window.loadSharedMuseum(function() {
-                    if (v==='v1') window.initV1();
-                    else if (v==='v2') window.initV2();
-                    else if (v==='v3') window.initV3();
-                });
-            }
-        }
+        requestAnimationFrame(function() {
+            if (v==='v1' && window.initV1) window.initV1();
+            else if (v==='v2' && window.initV2) window.initV2();
+            else if (v==='v3' && window.initV3) window.initV3();
+        });
     });
 };
 
@@ -262,7 +256,10 @@ window._doWatch = function(v) {
 };
 
 window._doReturn = function() {
-    // Close all sims, restore splash
+    // Kill any running animation loops
+    if (window._v1Loop) { cancelAnimationFrame(window._v1Loop); window._v1Loop = null; }
+    if (window._v2Loop) { cancelAnimationFrame(window._v2Loop); window._v2Loop = null; }
+    if (window._v3Loop) { cancelAnimationFrame(window._v3Loop); window._v3Loop = null; }
     ['v1','v2','v3'].forEach(function(v) {
         var r = document.getElementById(v+'-root');
         r.style.display = 'none';
@@ -1239,6 +1236,7 @@ function initV1() {
             session_id: SESSION_ID
         });
         v1Loop = requestAnimationFrame(loop);
+        window._v1Loop = v1Loop;
     }
 
     // UI
@@ -1901,6 +1899,7 @@ function initV2() {
             version: 'v2'
         });
         v2Loop=requestAnimationFrame(loop);
+        window._v2Loop = v2Loop;
     }
 
     // UI
@@ -2436,6 +2435,7 @@ function initV3() {
         });
 
         v3Loop=requestAnimationFrame(loop);
+        window._v3Loop = v3Loop;
     }
 
     // UI
@@ -3216,20 +3216,26 @@ function buildRenderWorld(engine, canvas, ctx, isMobileQuality, seedState) {
             ticks      = seedState.ticks      || 0;
             inversions = seedState.inversions  || 0;
             chaos      = seedState.chaos       || 0;
-            geoIdx     = seedState.geoIdx      || 0;
-            geo        = GEOS[geoIdx];
-            geo.scale  = seedState.geoScale    || 1;
             geoFrames  = seedState.geoFrames   || 0;
-            if (seedState.balls && seedState.balls.length === balls.length) {
+            // Mutate geo IN PLACE so closures see the update
+            const newGeoIdx = seedState.geoIdx || 0;
+            geoIdx = newGeoIdx;
+            const srcGeo = GEOS[newGeoIdx];
+            geo.pts   = srcGeo.pts;   // update pts reference
+            geo.scale = seedState.geoScale || 1;
+            if (seedState.balls) {
                 seedState.balls.forEach((s, i) => {
+                    if (!balls[i]) return;
                     balls[i].x       = s.x;
                     balls[i].y       = s.y;
                     balls[i].vx      = s.vx;
                     balls[i].vy      = s.vy;
-                    balls[i].winding = s.winding;
+                    balls[i].winding = s.winding || 0;
                     balls[i].path    = (s.path||[]).map(p=>({x:p.x,y:p.y}));
                 });
             }
+            // Warm up a few ticks so the render starts mid-flow not from a static frame
+            for (let w = 0; w < 5; w++) { tick(); }
         } catch(e) { console.warn('seedState restore failed:', e); }
     }
 
@@ -3433,11 +3439,14 @@ function buildRenderWorld(engine, canvas, ctx, isMobileQuality, seedState) {
     function getState() {
         return {
             ticks, inversions, chaos,
-            geoIdx, geoScale: geo.scale, geoFrames,
+            geoIdx: GEOS.findIndex(g => g.pts === geo.pts) >= 0
+                ? GEOS.findIndex(g => g.pts === geo.pts) : geoIdx,
+            geoScale: geo.scale,
+            geoFrames,
             balls: balls.map(b => ({
                 x: b.x, y: b.y, vx: b.vx, vy: b.vy,
                 winding: b.winding,
-                path: b.path.slice(-10) // save last 10 path points only
+                path: b.path.slice(-8)
             }))
         };
     }
