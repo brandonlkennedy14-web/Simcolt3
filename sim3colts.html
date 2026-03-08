@@ -260,6 +260,10 @@ window._doReturn = function() {
     if (window._v1Loop) { cancelAnimationFrame(window._v1Loop); window._v1Loop = null; }
     if (window._v2Loop) { cancelAnimationFrame(window._v2Loop); window._v2Loop = null; }
     if (window._v3Loop) { cancelAnimationFrame(window._v3Loop); window._v3Loop = null; }
+    if (window._v1Watchdog) { clearInterval(window._v1Watchdog); window._v1Watchdog = null; }
+    if (window._v2Watchdog) { clearInterval(window._v2Watchdog); window._v2Watchdog = null; }
+    if (window._v3Watchdog) { clearInterval(window._v3Watchdog); window._v3Watchdog = null; }
+    window._v1Heartbeat = window._v2Heartbeat = window._v3Heartbeat = null;
     ['v1','v2','v3'].forEach(function(v) {
         var r = document.getElementById(v+'-root');
         r.style.display = 'none';
@@ -1174,7 +1178,7 @@ function initV1() {
         // Flatline / chaos explosion detector
         if(chaosRatio < 0.05) flatlineTicks++; else flatlineTicks=0;
         if(chaosRatio > 28) chaosBurstTicks++; else chaosBurstTicks=0;
-        if(flatlineTicks>400||chaosBurstTicks>150){ flatlineTicks=0; chaosBurstTicks=0; initBalls(); return; }
+        if(flatlineTicks>400||chaosBurstTicks>150){ flatlineTicks=0; chaosBurstTicks=0; initBalls(); requestAnimationFrame(loop); return; }
 
         for(let c=0;c<CHUNK_SIZE;c++){
             balls.forEach((b,i)=>b.update(shadowBalls[i]));
@@ -1235,6 +1239,7 @@ function initV1() {
             dominant_wavelength: getDominantWavelength(balls).label,
             session_id: SESSION_ID
         });
+        window._v1Heartbeat = Date.now();
         v1Loop = requestAnimationFrame(loop);
         window._v1Loop = v1Loop;
     }
@@ -1273,7 +1278,26 @@ function initV1() {
     loop();
 }
 
-window.initV1 = initV1;
+
+    // ── Watchdog: detect if loop dies and restart ────────────
+    (function() {
+        var WD_V = '1';
+        var wd = setInterval(function() {
+            var hb = window['_v1Heartbeat'];
+            if (hb && Date.now() - hb > 4000) {
+                console.warn('[sim3] V1 loop stalled — restarting');
+                window['_v1Heartbeat'] = Date.now();
+                try { initBalls(); } catch(e) {}
+                try {
+                    if (window['_v1Loop']) cancelAnimationFrame(window['_v1Loop']);
+                    window['_v1Loop'] = requestAnimationFrame(loop);
+                } catch(e) { console.error(e); }
+            }
+        }, 2000);
+        window['_v1Watchdog'] = wd;
+    })();
+
+    window.initV1 = initV1;
 </script>
 
 
@@ -1829,7 +1853,7 @@ function initV2() {
         else if(fpsRolling>55){CHUNK_SIZE=Math.min(PERF.maxChunk,CHUNK_SIZE+2);perfEl.textContent='Compute: Unleashed';perfEl.style.color='#34d399';}
         if(chaosRatio<0.05) v2FlatlineTicks++; else v2FlatlineTicks=0;
         if(chaosRatio>28) v2ChaosBurstTicks++; else v2ChaosBurstTicks=0;
-        if(v2FlatlineTicks>400||v2ChaosBurstTicks>150){v2FlatlineTicks=0;v2ChaosBurstTicks=0;initBalls();return;}
+        if(v2FlatlineTicks>400||v2ChaosBurstTicks>150){v2FlatlineTicks=0;v2ChaosBurstTicks=0;initBalls(); requestAnimationFrame(loop); return;}
 
         for(let c=0;c<CHUNK_SIZE;c++){
             balls.forEach((b,i)=>b.update(shadowBalls[i]));
@@ -1898,6 +1922,7 @@ function initV2() {
             wall_heat_max: wallHeatMax,
             version: 'v2'
         });
+        window._v2Heartbeat = Date.now();
         v2Loop=requestAnimationFrame(loop);
         window._v2Loop = v2Loop;
     }
@@ -1970,7 +1995,26 @@ function initV2() {
     loop();
 }
 
-window.initV2 = initV2;
+
+    // ── Watchdog: detect if loop dies and restart ────────────
+    (function() {
+        var WD_V = '2';
+        var wd = setInterval(function() {
+            var hb = window['_v2Heartbeat'];
+            if (hb && Date.now() - hb > 4000) {
+                console.warn('[sim3] V2 loop stalled — restarting');
+                window['_v2Heartbeat'] = Date.now();
+                try { initBalls(); } catch(e) {}
+                try {
+                    if (window['_v2Loop']) cancelAnimationFrame(window['_v2Loop']);
+                    window['_v2Loop'] = requestAnimationFrame(loop);
+                } catch(e) { console.error(e); }
+            }
+        }, 2000);
+        window['_v2Watchdog'] = wd;
+    })();
+
+    window.initV2 = initV2;
 </script>
 
 <!-- ═══════════════════════════════════════════════
@@ -2373,7 +2417,7 @@ function initV3() {
         const perfEl=document.getElementById('v3-perf-indicator');
         if(chaosRatio<0.05) v3FlatlineTicks++; else v3FlatlineTicks=0;
         if(chaosRatio>28) v3ChaosBurstTicks++; else v3ChaosBurstTicks=0;
-        if(v3FlatlineTicks>500||v3ChaosBurstTicks>200){v3FlatlineTicks=0;v3ChaosBurstTicks=0;initBalls();return;}
+        if(v3FlatlineTicks>500||v3ChaosBurstTicks>200){v3FlatlineTicks=0;v3ChaosBurstTicks=0;initBalls(); requestAnimationFrame(loop); return;}
 
         if(playbackMode){
             restoreSnapshot(frameBuffer[playbackIdx]);
@@ -2434,6 +2478,7 @@ function initV3() {
             session_id: SESSION_ID
         });
 
+        window._v3Heartbeat = Date.now();
         v3Loop=requestAnimationFrame(loop);
         window._v3Loop = v3Loop;
     }
@@ -2461,7 +2506,26 @@ function initV3() {
     loop();
 }
 
-window.initV3 = initV3;
+
+    // ── Watchdog: detect if loop dies and restart ────────────
+    (function() {
+        var WD_V = '3';
+        var wd = setInterval(function() {
+            var hb = window['_v3Heartbeat'];
+            if (hb && Date.now() - hb > 4000) {
+                console.warn('[sim3] V3 loop stalled — restarting');
+                window['_v3Heartbeat'] = Date.now();
+                try { initBalls(); } catch(e) {}
+                try {
+                    if (window['_v3Loop']) cancelAnimationFrame(window['_v3Loop']);
+                    window['_v3Loop'] = requestAnimationFrame(loop);
+                } catch(e) { console.error(e); }
+            }
+        }, 2000);
+        window['_v3Watchdog'] = wd;
+    })();
+
+    window.initV3 = initV3;
 </script>
 
 
