@@ -144,26 +144,35 @@
         <h1 style="font-size:28px;font-weight:800;background:linear-gradient(135deg,#38bdf8,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin:0 0 6px;">Unified Learning Engine</h1>
         <p style="font-size:13px;color:#64748b;margin:0 0 32px;">Choose your simulation environment</p>
 
-        <button class="version-btn v1-btn" onclick="launchVersion('v1')">
+        <div class="version-btn v1-btn" style="cursor:default;">
             <span class="btn-tag" style="background:rgba(56,189,248,0.15);color:#38bdf8;">Original</span>
             <div style="font-size:17px;font-weight:700;color:#e2e8f0;margin-bottom:4px;">V1 — Classic Engine</div>
-            <div style="font-size:12px;color:#64748b;line-height:1.5;">The original sim — preserved exactly as trained. Platonic boundaries, discovery mode, and all accumulated museum knowledge intact.</div>
-            <div style="margin-top:10px;font-size:10px;font-family:monospace;color:#38bdf8;opacity:0.7;">Exclusion: 25 · Trail: 50 · Classic render</div>
-        </button>
+            <div style="font-size:12px;color:#64748b;line-height:1.5;">Platonic boundaries, discovery mode, all accumulated museum knowledge intact.</div>
+            <div style="display:flex;gap:8px;margin-top:12px;">
+                <button onclick="watchVideo('v1')" id="v1-watch-btn" style="flex:1;padding:9px 6px;border-radius:8px;border:1px solid rgba(56,189,248,0.5);background:rgba(56,189,248,0.12);color:#38bdf8;font-size:11px;font-family:monospace;cursor:pointer;letter-spacing:0.05em;">▶ Watch Video</button>
+                <button onclick="launchVersion('v1')" style="flex:1;padding:9px 6px;border-radius:8px;border:1px solid rgba(56,189,248,0.25);background:rgba(56,189,248,0.05);color:#64748b;font-size:11px;font-family:monospace;cursor:pointer;letter-spacing:0.05em;">⚡ Run Live</button>
+            </div>
+        </div>
 
-        <button class="version-btn v2-btn" onclick="launchVersion('v2')">
+        <div class="version-btn v2-btn" style="cursor:default;">
             <span class="btn-tag" style="background:rgba(168,85,247,0.15);color:#a855f7;">Enhanced</span>
             <div style="font-size:17px;font-weight:700;color:#e2e8f0;margin-bottom:4px;">V2 — Deep Scan Engine</div>
-            <div style="font-size:12px;color:#64748b;line-height:1.5;">Wall heat maps, winding-number visuals, deep scan remapping at 3 resolution levels, and richer museum logging — all on the same shared knowledge base.</div>
-            <div style="margin-top:10px;font-size:10px;font-family:monospace;color:#a855f7;opacity:0.7;">Exclusion: 25→10→4 · Deep scan · Parent hash tree</div>
-        </button>
+            <div style="font-size:12px;color:#64748b;line-height:1.5;">Wall heat maps, winding-number visuals, deep scan at 3 resolution levels, richer museum logging.</div>
+            <div style="display:flex;gap:8px;margin-top:12px;">
+                <button onclick="watchVideo('v2')" id="v2-watch-btn" style="flex:1;padding:9px 6px;border-radius:8px;border:1px solid rgba(168,85,247,0.5);background:rgba(168,85,247,0.12);color:#a855f7;font-size:11px;font-family:monospace;cursor:pointer;letter-spacing:0.05em;">▶ Watch Video</button>
+                <button onclick="launchVersion('v2')" style="flex:1;padding:9px 6px;border-radius:8px;border:1px solid rgba(168,85,247,0.25);background:rgba(168,85,247,0.05);color:#64748b;font-size:11px;font-family:monospace;cursor:pointer;letter-spacing:0.05em;">⚡ Run Live</button>
+            </div>
+        </div>
 
-        <button class="version-btn v3-btn" onclick="launchVersion('v3')">
+        <div class="version-btn v3-btn" style="cursor:default;">
             <span class="btn-tag" style="background:rgba(20,184,166,0.15);color:#14b8a6;">New</span>
             <div style="font-size:17px;font-weight:700;color:#e2e8f0;margin-bottom:4px;">V3 — Playback Engine</div>
-            <div style="font-size:12px;color:#64748b;line-height:1.5;">Pre-simulates 1000 frames silently, then plays back at your device's native frame rate. Every inversion burst fully visible. GenesisBrain live sync to all other apps.</div>
-            <div style="margin-top:10px;font-size:10px;font-family:monospace;color:#14b8a6;opacity:0.7;">1-tick/frame · Native fps · Full GenesisBrain sync</div>
-        </button>
+            <div style="font-size:12px;color:#64748b;line-height:1.5;">Pre-simulates silently, plays back every inversion burst at native fps. GenesisBrain live sync.</div>
+            <div style="display:flex;gap:8px;margin-top:12px;">
+                <button onclick="watchVideo('v3')" id="v3-watch-btn" style="flex:1;padding:9px 6px;border-radius:8px;border:1px solid rgba(20,184,166,0.5);background:rgba(20,184,166,0.12);color:#14b8a6;font-size:11px;font-family:monospace;cursor:pointer;letter-spacing:0.05em;">▶ Watch Video</button>
+                <button onclick="launchVersion('v3')" style="flex:1;padding:9px 6px;border-radius:8px;border:1px solid rgba(20,184,166,0.25);background:rgba(20,184,166,0.05);color:#64748b;font-size:11px;font-family:monospace;cursor:pointer;letter-spacing:0.05em;">⚡ Run Live</button>
+            </div>
+        </div>
 
         <button onclick="openMuseum()" style="margin-top:14px;width:100%;padding:12px;border-radius:10px;border:1px solid rgba(148,163,184,0.15);background:rgba(148,163,184,0.05);color:#475569;font-size:11px;font-family:monospace;letter-spacing:0.1em;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='rgba(148,163,184,0.1)';this.style.color='#94a3b8'" onmouseout="this.style.background='rgba(148,163,184,0.05)';this.style.color='#475569'">
             🏛️ VIEW MUSEUM — All Discovered Structures
@@ -205,6 +214,7 @@
                 </div>
                 <div style="display:flex;gap:16px;align-items:center;">
                     <span id="v1-perf-indicator" style="font-size:10px;font-family:monospace;color:#34d399;text-transform:uppercase;font-weight:700;">Compute: Balanced</span>
+                    <button id="v1-rec-btn" onclick="toggleRecording()" style="position:relative;font-size:10px;font-family:monospace;background:rgba(15,23,42,0.85);border:1px solid rgba(239,68,68,0.4);border-radius:8px;padding:4px 10px;color:#f87171;cursor:pointer;letter-spacing:0.05em;">⏺ Record<span id="v1-rec-badge" style="display:none;position:absolute;top:-6px;right:-6px;background:#ef4444;color:#fff;font-size:8px;border-radius:10px;padding:1px 4px;font-family:monospace;"></span></button>
                     <button onclick="returnToSplash()" style="font-size:10px;font-family:monospace;color:#475569;background:rgba(71,85,105,0.2);border:1px solid #334155;border-radius:8px;padding:4px 10px;cursor:pointer;">⇦ SWITCH</button>
                     <a href="https://buymeacoffee.com/brandonkennedy" target="_blank" style="transition:transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform=''">
                         <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height:32px;width:115px;">
@@ -252,6 +262,7 @@
                 </div>
                 <div style="display:flex;gap:16px;align-items:center;">
                     <span id="v2-perf-indicator" style="font-size:10px;font-family:monospace;color:#34d399;text-transform:uppercase;font-weight:700;">Compute: Balanced</span>
+                    <button id="v2-rec-btn" onclick="toggleRecording()" style="position:relative;font-size:10px;font-family:monospace;background:rgba(15,23,42,0.85);border:1px solid rgba(239,68,68,0.4);border-radius:8px;padding:4px 10px;color:#f87171;cursor:pointer;letter-spacing:0.05em;">⏺ Record<span id="v2-rec-badge" style="display:none;position:absolute;top:-6px;right:-6px;background:#ef4444;color:#fff;font-size:8px;border-radius:10px;padding:1px 4px;font-family:monospace;"></span></button>
                     <button onclick="returnToSplash()" style="font-size:10px;font-family:monospace;color:#475569;background:rgba(71,85,105,0.2);border:1px solid #334155;border-radius:8px;padding:4px 10px;cursor:pointer;">⇦ SWITCH</button>
                     <a href="https://buymeacoffee.com/brandonkennedy" target="_blank" style="transition:transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform=''">
                         <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height:32px;width:115px;">
@@ -293,6 +304,7 @@
                 </div>
                 <div style="display:flex;gap:12px;align-items:center;">
                     <span id="v3-perf-indicator" style="font-size:10px;font-family:monospace;color:#14b8a6;text-transform:uppercase;font-weight:700;">Loading...</span>
+                    <button id="v3-rec-btn" onclick="toggleRecording()" style="position:relative;font-size:10px;font-family:monospace;background:rgba(15,23,42,0.85);border:1px solid rgba(239,68,68,0.4);border-radius:8px;padding:4px 10px;color:#f87171;cursor:pointer;letter-spacing:0.05em;">⏺ Record<span id="v3-rec-badge" style="display:none;position:absolute;top:-6px;right:-6px;background:#ef4444;color:#fff;font-size:8px;border-radius:10px;padding:1px 4px;font-family:monospace;"></span></button>
                     <button onclick="returnToSplash()" style="font-size:10px;font-family:monospace;color:#475569;background:rgba(71,85,105,0.2);border:1px solid #334155;border-radius:8px;padding:4px 10px;cursor:pointer;">⇦ SWITCH</button>
                 </div>
             </div>
@@ -358,6 +370,26 @@
     }
     console.log('[sim3] Session:', SESSION_ID, '|', SESSION_DISCOVERIES, 'discoveries |', SESSION_TICKS_TOTAL, 'ticks');
 
+    // ── Mobile performance detection ──
+    // Triggers conservative render path: fewer physics ticks, no gradients,
+    // capped connections, no shadowBlur, thinned Munker stripes.
+    const IS_MOBILE = (
+        /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+        (navigator.hardwareConcurrency !== undefined && navigator.hardwareConcurrency <= 4) ||
+        window.innerWidth <= 768
+    );
+    const PERF = {
+        maxChunk:      IS_MOBILE ? 40  : 600,
+        minChunk:      IS_MOBILE ? 10  : 50,
+        maxConns:      IS_MOBILE ? 12  : 1200, // cap connection pairs
+        trailLen:      IS_MOBILE ? 20  : 50,
+        munkerStep:    IS_MOBILE ? 3   : 1,    // draw every Nth stripe
+        shadowBlur:    IS_MOBILE ? false : true,
+        gradConns:     IS_MOBILE ? false : true, // gradient vs flat colour on connections
+        dpr:           IS_MOBILE ? 1    : Math.min(window.devicePixelRatio || 1, 2),
+    };
+    console.log('[sim3] Mobile:', IS_MOBILE, '| PERF:', PERF);
+
     // ── WAVELENGTH → COLOUR MAPPING ──
     // The 7 ball colors = 7 canonical visible light wavelength bands.
     // This is the scientific basis of the Munker-White overlay:
@@ -420,6 +452,13 @@
         if (el_id) el_id.textContent = SESSION_ID.slice(0, 18) + '...';
         if (el_disc) el_disc.textContent = SESSION_DISCOVERIES;
         if (el_tick) el_tick.textContent = SESSION_TICKS_TOTAL.toLocaleString();
+        // Show mobile perf mode badge
+        if (IS_MOBILE) {
+            ['v1','v2','v3'].forEach(v => {
+                const el = document.getElementById(v+'-perf-indicator');
+                if (el) { el.textContent = '⚡ Mobile Mode'; el.style.color = '#f59e0b'; }
+            });
+        }
     });
 
     // Load museum hashes once, shared by both versions
@@ -667,7 +706,7 @@ function initV1() {
     let currentGeoName = 'Square';
     let ticks = 0, inversions = 0, chaosRatio = 0.0;
     let currentConfigHash = '';
-    let CHUNK_SIZE = 300, lastFrameTime = performance.now(), fpsRolling = 60;
+    let CHUNK_SIZE = IS_MOBILE ? 30 : 300, lastFrameTime = performance.now(), fpsRolling = 60;
     let discoveryBounds = { minX: -150, maxX: 150, minY: -150, maxY: 150 };
 
     // ── Munker-White illusion state ──
@@ -717,9 +756,9 @@ function initV1() {
                 let dx=this.x-shadowBall.x, dy=this.y-shadowBall.y;
                 chaosRatio = (chaosRatio*0.999) + (Math.sqrt(dx*dx+dy*dy)*0.001);
             }
-            if (!this.isShadow && ticks % 5 === 0) {
+            if (!this.isShadow && ticks % (IS_MOBILE?3:5) === 0) {
                 this.path.push({x:this.x,y:this.y});
-                if (this.path.length > 50) this.path.shift();
+                if (this.path.length > PERF.trailLen) this.path.shift();
             }
             let angle = Math.atan2(this.y, this.x);
             if (this.lastAngle !== undefined) {
@@ -934,57 +973,64 @@ function initV1() {
         // ── Munker-White: drawn HERE so balls + trails render ON TOP ──
         drawMunkerWhite(ctx, width, height, munkerOffset, MUNKER_STRIPE_H);
 
+        // ── Connections (PERF-aware) ──
         ctx.lineWidth=1.5;
         ctx.globalCompositeOperation='hard-light';
-        let maxDist=(simMode==='discovery'?150:150*activeGeo.scale)*baseScale;
+        const maxDist=(simMode==='discovery'?150:150*activeGeo.scale)*baseScale;
+        // Build sorted pair list, cap at PERF.maxConns
+        const pairs=[];
         for(let i=0;i<balls.length;i++){
             for(let j=i+1;j<balls.length;j++){
-                let dx=balls[i].x*baseScale-balls[j].x*baseScale;
-                let dy=balls[i].y*baseScale-balls[j].y*baseScale;
+                const dx=balls[i].x*baseScale-balls[j].x*baseScale;
+                const dy=balls[i].y*baseScale-balls[j].y*baseScale;
                 if(Math.abs(dx)>maxDist||Math.abs(dy)>maxDist) continue;
-                let dist=Math.sqrt(dx*dx+dy*dy);
-                if(dist<maxDist){
-                    ctx.beginPath();
-                    ctx.moveTo(CENTER_X+balls[i].x*baseScale,CENTER_Y+balls[i].y*baseScale);
-                    let warpX=(balls[i].vx+balls[j].vx)*10*baseScale;
-                    let warpY=(balls[i].vy+balls[j].vy)*10*baseScale;
-                    ctx.bezierCurveTo(
-                        CENTER_X+balls[i].x*baseScale+warpX,CENTER_Y+balls[i].y*baseScale-warpY,
-                        CENTER_X+balls[j].x*baseScale-warpX,CENTER_Y+balls[j].y*baseScale+warpY,
-                        CENTER_X+balls[j].x*baseScale,CENTER_Y+balls[j].y*baseScale
-                    );
-                    let opacity=(1-dist/maxDist)*0.8;
-                    let grad=ctx.createLinearGradient(CENTER_X+balls[i].x*baseScale,CENTER_Y+balls[i].y*baseScale,CENTER_X+balls[j].x*baseScale,CENTER_Y+balls[j].y*baseScale);
-                    grad.addColorStop(0,balls[i].color+Math.floor(opacity*255).toString(16).padStart(2,'0'));
-                    grad.addColorStop(1,balls[j].color+Math.floor(opacity*255).toString(16).padStart(2,'0'));
-                    ctx.strokeStyle=grad; ctx.stroke();
-                }
+                const d2=dx*dx+dy*dy, md2=maxDist*maxDist;
+                if(d2<md2) pairs.push([i,j,Math.sqrt(d2)]);
             }
+        }
+        if(!PERF.gradConns) pairs.sort((a,b)=>a[2]-b[2]);
+        const drawPairs=PERF.gradConns?pairs:pairs.slice(0,PERF.maxConns);
+        for(const [i,j,dist] of drawPairs){
+            const opacity=(1-dist/maxDist)*0.8;
+            ctx.beginPath();
+            ctx.moveTo(CENTER_X+balls[i].x*baseScale,CENTER_Y+balls[i].y*baseScale);
+            if(PERF.gradConns){
+                const warpX=(balls[i].vx+balls[j].vx)*10*baseScale;
+                const warpY=(balls[i].vy+balls[j].vy)*10*baseScale;
+                ctx.bezierCurveTo(
+                    CENTER_X+balls[i].x*baseScale+warpX,CENTER_Y+balls[i].y*baseScale-warpY,
+                    CENTER_X+balls[j].x*baseScale-warpX,CENTER_Y+balls[j].y*baseScale+warpY,
+                    CENTER_X+balls[j].x*baseScale,CENTER_Y+balls[j].y*baseScale);
+                const grad=ctx.createLinearGradient(CENTER_X+balls[i].x*baseScale,CENTER_Y+balls[i].y*baseScale,CENTER_X+balls[j].x*baseScale,CENTER_Y+balls[j].y*baseScale);
+                grad.addColorStop(0,balls[i].color+Math.floor(opacity*255).toString(16).padStart(2,'0'));
+                grad.addColorStop(1,balls[j].color+Math.floor(opacity*255).toString(16).padStart(2,'0'));
+                ctx.strokeStyle=grad;
+            } else {
+                ctx.lineTo(CENTER_X+balls[j].x*baseScale,CENTER_Y+balls[j].y*baseScale);
+                ctx.strokeStyle=balls[i].color+Math.floor(opacity*180).toString(16).padStart(2,'0');
+            }
+            ctx.stroke();
         }
         ctx.globalCompositeOperation='source-over';
 
+        // ── Trails + balls (PERF-aware) ──
         for(let g=0;g<7;g++){
-            let groupBalls=balls.filter(b=>b.groupId===g);
+            const groupBalls=balls.filter(b=>b.groupId===g);
             groupBalls.forEach(b=>{
-                if(b.path.length>0){
+                if(b.path.length>1){
                     ctx.beginPath();
                     ctx.moveTo(CENTER_X+b.path[0].x*baseScale,CENTER_Y+b.path[0].y*baseScale);
-                    for(let i=1;i<b.path.length;i++){
-                        let xc=CENTER_X+(b.path[i-1].x+b.path[i].x)/2*baseScale;
-                        let yc=CENTER_Y+(b.path[i-1].y+b.path[i].y)/2*baseScale;
-                        ctx.quadraticCurveTo(CENTER_X+b.path[i-1].x*baseScale,CENTER_Y+b.path[i-1].y*baseScale,xc,yc);
-                    }
-                    ctx.lineTo(CENTER_X+b.x*baseScale,CENTER_Y+b.y*baseScale);
-                    ctx.lineWidth=b.type==='smith'?4:2;
-                    ctx.strokeStyle='#94a3b8'; ctx.stroke();
-                    if(fgPatterns[g]){ctx.strokeStyle=fgPatterns[g];ctx.stroke();}
+                    for(let i=1;i<b.path.length;i++) ctx.lineTo(CENTER_X+b.path[i].x*baseScale,CENTER_Y+b.path[i].y*baseScale);
+                    ctx.lineWidth=b.type==='smith'?3:1.5;
+                    ctx.strokeStyle=b.color+'88'; ctx.stroke();
                 }
             });
             groupBalls.forEach(b=>{
+                if(PERF.shadowBlur){ctx.shadowBlur=12;ctx.shadowColor=b.color;}
                 ctx.beginPath();
                 ctx.arc(CENTER_X+b.x*baseScale,CENTER_Y+b.y*baseScale,(b.type==='smith'?8:5)*baseScale,0,Math.PI*2);
-                ctx.fillStyle='#94a3b8'; ctx.fill();
-                if(fgPatterns[g]){ctx.fillStyle=fgPatterns[g];ctx.fill();}
+                ctx.fillStyle=b.color; ctx.fill();
+                ctx.shadowBlur=0;
             });
         }
 
@@ -1060,8 +1106,8 @@ function initV1() {
         lastFrameTime = now;
         munkerOffset = Math.sin(now*0.0008)*MUNKER_STRIPE_H*3 + now*0.01;
         const perfEl = document.getElementById('v1-perf-indicator');
-        if(fpsRolling<30){CHUNK_SIZE=Math.max(50,CHUNK_SIZE-5);perfEl.textContent='Compute: Throttled';perfEl.style.color='#f87171';}
-        else if(fpsRolling>55){CHUNK_SIZE=Math.min(800,CHUNK_SIZE+2);perfEl.textContent='Compute: Unleashed';perfEl.style.color='#34d399';}
+        if(fpsRolling<30){CHUNK_SIZE=Math.max(PERF.minChunk,CHUNK_SIZE-5);perfEl.textContent='Compute: Throttled';perfEl.style.color='#f87171';}
+        else if(fpsRolling>55){CHUNK_SIZE=Math.min(PERF.maxChunk,CHUNK_SIZE+2);perfEl.textContent='Compute: Unleashed';perfEl.style.color='#34d399';}
         // Flatline / chaos explosion detector
         if(chaosRatio < 0.05) flatlineTicks++; else flatlineTicks=0;
         if(chaosRatio > 28) chaosBurstTicks++; else chaosBurstTicks=0;
@@ -1227,7 +1273,7 @@ function initV2() {
 
     let simMode='platonic', currentGeoName='Square';
     let ticks=0, inversions=0, chaosRatio=0.0;
-    let CHUNK_SIZE=300, lastFrameTime=performance.now(), fpsRolling=60;
+    let CHUNK_SIZE=IS_MOBILE?30:300, lastFrameTime=performance.now(), fpsRolling=60;
     let discoveryBounds={minX:-150,maxX:150,minY:-150,maxY:150};
 
     const geometries={
@@ -1515,63 +1561,66 @@ function initV2() {
         // ── Munker-White: drawn HERE so balls + trails render ON TOP ──
         drawMunkerWhite(ctx, width, height, munkerOffset, MUNKER_STRIPE_H);
 
-        // Ruliad graph
+        // ── Ruliad graph (PERF-aware) ──
         ctx.lineWidth=1.5;ctx.globalCompositeOperation='hard-light';
-        let maxDist=(simMode==='discovery'?150:150*activeGeo.scale)*baseScale;
+        const maxDist=(simMode==='discovery'?150:150*activeGeo.scale)*baseScale;
+        const pairs=[];
         for(let i=0;i<balls.length;i++){
             for(let j=i+1;j<balls.length;j++){
-                let dx=balls[i].x*baseScale-balls[j].x*baseScale;
-                let dy=balls[i].y*baseScale-balls[j].y*baseScale;
+                const dx=balls[i].x*baseScale-balls[j].x*baseScale;
+                const dy=balls[i].y*baseScale-balls[j].y*baseScale;
                 if(Math.abs(dx)>maxDist||Math.abs(dy)>maxDist) continue;
-                let dist=Math.sqrt(dx*dx+dy*dy);
-                if(dist<maxDist){
-                    ctx.beginPath();
-                    ctx.moveTo(CENTER_X+balls[i].x*baseScale,CENTER_Y+balls[i].y*baseScale);
-                    let warpX=(balls[i].vx+balls[j].vx)*10*baseScale;
-                    let warpY=(balls[i].vy+balls[j].vy)*10*baseScale;
-                    ctx.bezierCurveTo(CENTER_X+balls[i].x*baseScale+warpX,CENTER_Y+balls[i].y*baseScale-warpY,CENTER_X+balls[j].x*baseScale-warpX,CENTER_Y+balls[j].y*baseScale+warpY,CENTER_X+balls[j].x*baseScale,CENTER_Y+balls[j].y*baseScale);
-                    let opacity=(1-dist/maxDist)*0.8;
-                    let grad=ctx.createLinearGradient(CENTER_X+balls[i].x*baseScale,CENTER_Y+balls[i].y*baseScale,CENTER_X+balls[j].x*baseScale,CENTER_Y+balls[j].y*baseScale);
-                    grad.addColorStop(0,balls[i].color+Math.floor(opacity*255).toString(16).padStart(2,'0'));
-                    grad.addColorStop(1,balls[j].color+Math.floor(opacity*255).toString(16).padStart(2,'0'));
-                    ctx.strokeStyle=grad;ctx.stroke();
-                }
+                const d2=dx*dx+dy*dy;
+                if(d2<maxDist*maxDist) pairs.push([i,j,Math.sqrt(d2)]);
             }
+        }
+        if(!PERF.gradConns) pairs.sort((a,b)=>a[2]-b[2]);
+        const drawPairs=PERF.gradConns?pairs:pairs.slice(0,PERF.maxConns);
+        for(const [i,j,dist] of drawPairs){
+            const opacity=(1-dist/maxDist)*0.8;
+            ctx.beginPath();
+            ctx.moveTo(CENTER_X+balls[i].x*baseScale,CENTER_Y+balls[i].y*baseScale);
+            if(PERF.gradConns){
+                const warpX=(balls[i].vx+balls[j].vx)*10*baseScale;
+                const warpY=(balls[i].vy+balls[j].vy)*10*baseScale;
+                ctx.bezierCurveTo(CENTER_X+balls[i].x*baseScale+warpX,CENTER_Y+balls[i].y*baseScale-warpY,CENTER_X+balls[j].x*baseScale-warpX,CENTER_Y+balls[j].y*baseScale+warpY,CENTER_X+balls[j].x*baseScale,CENTER_Y+balls[j].y*baseScale);
+                const grad=ctx.createLinearGradient(CENTER_X+balls[i].x*baseScale,CENTER_Y+balls[i].y*baseScale,CENTER_X+balls[j].x*baseScale,CENTER_Y+balls[j].y*baseScale);
+                grad.addColorStop(0,balls[i].color+Math.floor(opacity*255).toString(16).padStart(2,'0'));
+                grad.addColorStop(1,balls[j].color+Math.floor(opacity*255).toString(16).padStart(2,'0'));
+                ctx.strokeStyle=grad;
+            } else {
+                ctx.lineTo(CENTER_X+balls[j].x*baseScale,CENTER_Y+balls[j].y*baseScale);
+                ctx.strokeStyle=balls[i].color+Math.floor(opacity*180).toString(16).padStart(2,'0');
+            }
+            ctx.stroke();
         }
         ctx.globalCompositeOperation='source-over';
 
-        // Trails + balls with winding visuals
+        // ── Trails + balls (PERF-aware) ──
         for(let g=0;g<7;g++){
-            let groupBalls=balls.filter(b=>b.groupId===g);
+            const groupBalls=balls.filter(b=>b.groupId===g);
             groupBalls.forEach(b=>{
                 if(b.path.length>1){
-                    let windingBoost=Math.min(1,Math.abs(b.winding)/5);
+                    const windingBoost=Math.min(1,Math.abs(b.winding)/5);
                     ctx.beginPath();
                     ctx.moveTo(CENTER_X+b.path[0].x*baseScale,CENTER_Y+b.path[0].y*baseScale);
-                    for(let i=1;i<b.path.length;i++){
-                        let xc=CENTER_X+(b.path[i-1].x+b.path[i].x)/2*baseScale;
-                        let yc=CENTER_Y+(b.path[i-1].y+b.path[i].y)/2*baseScale;
-                        ctx.quadraticCurveTo(CENTER_X+b.path[i-1].x*baseScale,CENTER_Y+b.path[i-1].y*baseScale,xc,yc);
-                    }
-                    ctx.lineTo(CENTER_X+b.x*baseScale,CENTER_Y+b.y*baseScale);
+                    for(let i=1;i<b.path.length;i++) ctx.lineTo(CENTER_X+b.path[i].x*baseScale,CENTER_Y+b.path[i].y*baseScale);
                     ctx.lineWidth=b.type==='smith'?3+windingBoost*2:1.5+windingBoost;
                     ctx.globalAlpha=0.35+windingBoost*0.45;
-                    ctx.strokeStyle='#94a3b8';ctx.stroke();
-                    if(fgPatterns[g]){ctx.strokeStyle=fgPatterns[g];ctx.stroke();}
+                    ctx.strokeStyle=b.color; ctx.stroke();
                     ctx.globalAlpha=1;
                 }
             });
             groupBalls.forEach(b=>{
-                let windingBoost=Math.min(1,Math.abs(b.winding)/5);
-                let r=(b.type==='smith'?8:5)*baseScale;
-                let glowAmt=Math.max(windingBoost*0.6,b.glowIntensity);
-                if(glowAmt>0.05){
+                const windingBoost=Math.min(1,Math.abs(b.winding)/5);
+                const r=(b.type==='smith'?8:5)*baseScale;
+                const glowAmt=Math.max(windingBoost*0.6,b.glowIntensity||0);
+                if(glowAmt>0.05&&PERF.shadowBlur){
                     ctx.beginPath();ctx.arc(CENTER_X+b.x*baseScale,CENTER_Y+b.y*baseScale,r*(1.8+glowAmt*2),0,Math.PI*2);
                     ctx.fillStyle=b.color+Math.floor(glowAmt*80).toString(16).padStart(2,'0');ctx.fill();
                 }
                 ctx.beginPath();ctx.arc(CENTER_X+b.x*baseScale,CENTER_Y+b.y*baseScale,r*(1+windingBoost*0.4),0,Math.PI*2);
-                ctx.fillStyle='#94a3b8';ctx.fill();
-                if(fgPatterns[g]){ctx.fillStyle=fgPatterns[g];ctx.fill();}
+                ctx.fillStyle=b.color;ctx.fill();
                 if(b.type==='smith'&&Math.abs(b.winding)>1){
                     ctx.beginPath();ctx.arc(CENTER_X+b.x*baseScale,CENTER_Y+b.y*baseScale,r*1.6,0,Math.PI*2);
                     ctx.strokeStyle=b.color+'aa';ctx.lineWidth=1.5;ctx.stroke();
@@ -1710,8 +1759,8 @@ function initV2() {
         lastFrameTime=now;
         munkerOffset=Math.sin(now*0.0008)*MUNKER_STRIPE_H*3+now*0.01;
         const perfEl=document.getElementById('v2-perf-indicator');
-        if(fpsRolling<30){CHUNK_SIZE=Math.max(50,CHUNK_SIZE-5);perfEl.textContent='Compute: Throttled';perfEl.style.color='#f87171';}
-        else if(fpsRolling>55){CHUNK_SIZE=Math.min(800,CHUNK_SIZE+2);perfEl.textContent='Compute: Unleashed';perfEl.style.color='#34d399';}
+        if(fpsRolling<30){CHUNK_SIZE=Math.max(PERF.minChunk,CHUNK_SIZE-5);perfEl.textContent='Compute: Throttled';perfEl.style.color='#f87171';}
+        else if(fpsRolling>55){CHUNK_SIZE=Math.min(PERF.maxChunk,CHUNK_SIZE+2);perfEl.textContent='Compute: Unleashed';perfEl.style.color='#34d399';}
         if(chaosRatio<0.05) v2FlatlineTicks++; else v2FlatlineTicks=0;
         if(chaosRatio>28) v2ChaosBurstTicks++; else v2ChaosBurstTicks=0;
         if(v2FlatlineTicks>400||v2ChaosBurstTicks>150){v2FlatlineTicks=0;v2ChaosBurstTicks=0;initBalls();return;}
@@ -1865,7 +1914,7 @@ function initV3() {
     const colors = ['#ef4444','#f97316','#eab308','#22c55e','#3b82f6','#4f46e5','#a855f7'];
     const ST_H = 5;
     const ZETA_VOID_LIMIT = 2000;
-    const PRESIM_TICKS = 1000;
+    const PRESIM_TICKS = IS_MOBILE ? 200 : 1000;
 
     const canvas = document.getElementById('v3-canvas');
     const ctx = canvas.getContext('2d');
@@ -1937,7 +1986,7 @@ function initV3() {
             }
             if(!this.isShadow && ticks%3===0){
                 this.path.push({x:this.x,y:this.y});
-                if(this.path.length>80) this.path.shift();
+                if(this.path.length>PERF.trailLen) this.path.shift();
             }
             let angle=Math.atan2(this.y,this.x);
             if(this.lastAngle!==undefined){
@@ -2156,8 +2205,9 @@ function initV3() {
         ctx.fillRect(leftBandX,0,bandW,H); ctx.fillRect(rightBandX,0,bandW,H);
         ctx.globalAlpha=1.0;
         const startY=(offset%stripeH)-stripeH;
-        for(let y=startY;y<H+stripeH;y+=stripeH){ctx.fillStyle='rgba(0,0,0,0.88)';ctx.fillRect(0,y,W,1);}
-        for(let y=startY;y<H+stripeH;y+=stripeH){ctx.fillStyle='rgba(255,255,255,0.88)';ctx.fillRect(rightBandX,y,bandW,1);}
+        const mStep=PERF.munkerStep*stripeH;
+        for(let y=startY;y<H+stripeH;y+=mStep){ctx.fillStyle='rgba(0,0,0,0.88)';ctx.fillRect(0,y,W,1);}
+        for(let y=startY;y<H+stripeH;y+=mStep){ctx.fillStyle='rgba(255,255,255,0.88)';ctx.fillRect(rightBandX,y,bandW,1);}
         ctx.restore();
     }
 
@@ -2172,25 +2222,36 @@ function initV3() {
         ctx.fill('evenodd');
         drawMunkerWhite(width,height,munkerOffset,MUNKER_STRIPE_H);
 
+        // ── V3 Connections (PERF-aware) ──
         ctx.lineWidth=1.5; ctx.globalCompositeOperation='hard-light';
-        let maxDist=(simMode==='discovery'?150:150*activeGeo.scale)*baseScale;
+        const maxDist=(simMode==='discovery'?150:150*activeGeo.scale)*baseScale;
+        const pairs=[];
         for(let i=0;i<balls.length;i++){
             for(let j=i+1;j<balls.length;j++){
-                let dx=balls[i].x*baseScale-balls[j].x*baseScale, dy=balls[i].y*baseScale-balls[j].y*baseScale;
+                const dx=balls[i].x*baseScale-balls[j].x*baseScale,dy=balls[i].y*baseScale-balls[j].y*baseScale;
                 if(Math.abs(dx)>maxDist||Math.abs(dy)>maxDist) continue;
-                let dist=Math.sqrt(dx*dx+dy*dy);
-                if(dist<maxDist){
-                    ctx.beginPath();
-                    ctx.moveTo(CENTER_X+balls[i].x*baseScale,CENTER_Y+balls[i].y*baseScale);
-                    let warpX=(balls[i].vx+balls[j].vx)*10*baseScale, warpY=(balls[i].vy+balls[j].vy)*10*baseScale;
-                    ctx.bezierCurveTo(CENTER_X+balls[i].x*baseScale+warpX,CENTER_Y+balls[i].y*baseScale-warpY,CENTER_X+balls[j].x*baseScale-warpX,CENTER_Y+balls[j].y*baseScale+warpY,CENTER_X+balls[j].x*baseScale,CENTER_Y+balls[j].y*baseScale);
-                    let opacity=(1-dist/maxDist)*0.8;
-                    let grad=ctx.createLinearGradient(CENTER_X+balls[i].x*baseScale,CENTER_Y+balls[i].y*baseScale,CENTER_X+balls[j].x*baseScale,CENTER_Y+balls[j].y*baseScale);
-                    grad.addColorStop(0,balls[i].color+Math.floor(opacity*255).toString(16).padStart(2,'0'));
-                    grad.addColorStop(1,balls[j].color+Math.floor(opacity*255).toString(16).padStart(2,'0'));
-                    ctx.strokeStyle=grad; ctx.stroke();
-                }
+                const d2=dx*dx+dy*dy;
+                if(d2<maxDist*maxDist) pairs.push([i,j,Math.sqrt(d2)]);
             }
+        }
+        if(!PERF.gradConns) pairs.sort((a,b)=>a[2]-b[2]);
+        const drawPairs=PERF.gradConns?pairs:pairs.slice(0,PERF.maxConns);
+        for(const [i,j,dist] of drawPairs){
+            const opacity=(1-dist/maxDist)*0.8;
+            ctx.beginPath();
+            ctx.moveTo(CENTER_X+balls[i].x*baseScale,CENTER_Y+balls[i].y*baseScale);
+            if(PERF.gradConns){
+                const warpX=(balls[i].vx+balls[j].vx)*10*baseScale,warpY=(balls[i].vy+balls[j].vy)*10*baseScale;
+                ctx.bezierCurveTo(CENTER_X+balls[i].x*baseScale+warpX,CENTER_Y+balls[i].y*baseScale-warpY,CENTER_X+balls[j].x*baseScale-warpX,CENTER_Y+balls[j].y*baseScale+warpY,CENTER_X+balls[j].x*baseScale,CENTER_Y+balls[j].y*baseScale);
+                const grad=ctx.createLinearGradient(CENTER_X+balls[i].x*baseScale,CENTER_Y+balls[i].y*baseScale,CENTER_X+balls[j].x*baseScale,CENTER_Y+balls[j].y*baseScale);
+                grad.addColorStop(0,balls[i].color+Math.floor(opacity*255).toString(16).padStart(2,'0'));
+                grad.addColorStop(1,balls[j].color+Math.floor(opacity*255).toString(16).padStart(2,'0'));
+                ctx.strokeStyle=grad;
+            } else {
+                ctx.lineTo(CENTER_X+balls[j].x*baseScale,CENTER_Y+balls[j].y*baseScale);
+                ctx.strokeStyle=balls[i].color+Math.floor(opacity*180).toString(16).padStart(2,'0');
+            }
+            ctx.stroke();
         }
         ctx.globalCompositeOperation='source-over';
 
@@ -2209,7 +2270,7 @@ function initV3() {
             const windingBoost=Math.min(1,Math.abs(b.winding)/5);
             const r=(b.type==='smith'?7:4.5)*baseScale*(1+windingBoost*0.5);
             ctx.beginPath(); ctx.arc(CENTER_X+b.x*baseScale,CENTER_Y+b.y*baseScale,r,0,Math.PI*2);
-            ctx.shadowBlur=windingBoost*28; ctx.shadowColor=b.color;
+            if(PERF.shadowBlur){ctx.shadowBlur=windingBoost*28; ctx.shadowColor=b.color;}
             ctx.fillStyle=b.color; ctx.fill();
             // White core
             ctx.beginPath(); ctx.arc(CENTER_X+b.x*baseScale,CENTER_Y+b.y*baseScale,r*0.35,0,Math.PI*2);
@@ -2328,6 +2389,698 @@ function initV3() {
     resizeCanvas();
     initBalls();
     loop();
+}
+</script>
+
+
+    <!-- ═══ VIDEO RECORDER (shared) ═══ -->
+    <script>
+    // ffmpeg.wasm loaded lazily on first MP4 request
+    let ffmpegReady = false, ffmpegLoading = false, ffmpegInstance = null;
+    const ffmpegLogEl = () => document.getElementById('rec-log');
+
+    async function loadFFmpeg() {
+        if (ffmpegReady) return;
+        if (ffmpegLoading) return new Promise(r => { const t = setInterval(() => { if(ffmpegReady){clearInterval(t);r();} }, 100); });
+        ffmpegLoading = true;
+        const { createFFmpeg, fetchFile } = FFmpeg;
+        ffmpegInstance = createFFmpeg({ log: false, corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js' });
+        await ffmpegInstance.load();
+        ffmpegReady = true; ffmpegLoading = false;
+    }
+
+    // Per-engine recorder state
+    const recState = { recording: false, chunks: [], recorder: null, startTime: 0, canvas: null };
+
+    function getActiveCanvas() {
+        const v = document.querySelector('.sim-root.active canvas:not([id$="-bg"])');
+        if (v) return v;
+        // fallback — grab first visible canvas in active root
+        const root = document.querySelector('.sim-root.active');
+        return root ? root.querySelector('canvas') : null;
+    }
+
+    function updateRecBtn(state) {
+        ['v1','v2','v3'].forEach(v => {
+            const btn = document.getElementById(v + '-rec-btn');
+            const badge = document.getElementById(v + '-rec-badge');
+            if (!btn) return;
+            if (state === 'recording') {
+                btn.style.background = 'rgba(239,68,68,0.85)';
+                btn.innerHTML = '⏹ Stop';
+                if (badge) { badge.style.display = 'flex'; badge.textContent = '0:00'; }
+            } else if (state === 'processing') {
+                btn.style.background = 'rgba(168,85,247,0.85)';
+                btn.innerHTML = '⚙ Converting…';
+                if (badge) badge.style.display = 'none';
+            } else {
+                btn.style.background = 'rgba(15,23,42,0.85)';
+                btn.innerHTML = '⏺ Record';
+                if (badge) badge.style.display = 'none';
+            }
+        });
+    }
+
+    let recTimerInterval = null;
+    function startRecording() {
+        const canvas = getActiveCanvas();
+        if (!canvas) { alert('No active sim canvas found'); return; }
+        const stream = canvas.captureStream(IS_MOBILE ? 24 : 30);
+        const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+            ? 'video/webm;codecs=vp9' : 'video/webm';
+        recState.recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: IS_MOBILE ? 2_000_000 : 5_000_000 });
+        recState.chunks = [];
+        recState.recorder.ondataavailable = e => { if(e.data.size > 0) recState.chunks.push(e.data); };
+        recState.recorder.start(250); // collect every 250ms
+        recState.recording = true;
+        recState.startTime = Date.now();
+        updateRecBtn('recording');
+        recTimerInterval = setInterval(() => {
+            const s = Math.floor((Date.now()-recState.startTime)/1000);
+            const mm = String(Math.floor(s/60)).padStart(2,'0');
+            const ss = String(s%60).padStart(2,'0');
+            ['v1','v2','v3'].forEach(v => {
+                const badge = document.getElementById(v+'-rec-badge');
+                if(badge && badge.style.display !== 'none') badge.textContent = mm+':'+ss;
+            });
+        }, 500);
+    }
+
+    async function stopRecording() {
+        if (!recState.recorder) return;
+        clearInterval(recTimerInterval);
+        updateRecBtn('processing');
+        await new Promise(r => { recState.recorder.onstop = r; recState.recorder.stop(); });
+        recState.recording = false;
+        const webmBlob = new Blob(recState.chunks, { type: 'video/webm' });
+        showDownloadModal(webmBlob);
+    }
+
+    function toggleRecording() {
+        if (recState.recording) stopRecording();
+        else startRecording();
+    }
+
+    function showDownloadModal(webmBlob) {
+        updateRecBtn('idle');
+        const modal = document.getElementById('rec-modal');
+        modal.style.display = 'flex';
+        const webmUrl = URL.createObjectURL(webmBlob);
+        document.getElementById('rec-dl-webm').onclick = () => {
+            const a = document.createElement('a');
+            a.href = webmUrl; a.download = 'sim3colts_' + Date.now() + '.webm'; a.click();
+        };
+        document.getElementById('rec-dl-mp4').onclick = async () => {
+            const btn = document.getElementById('rec-dl-mp4');
+            btn.textContent = '⚙ Converting to MP4…'; btn.disabled = true;
+            try {
+                if (!window.FFmpeg) {
+                    const s = document.createElement('script');
+                    s.src = 'https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js';
+                    document.head.appendChild(s);
+                    await new Promise((res,rej) => { s.onload=res; s.onerror=()=>rej(new Error('ffmpeg.js load failed')); });
+                }
+                await loadFFmpeg();
+                const { fetchFile } = FFmpeg;
+                const webmData = new Uint8Array(await webmBlob.arrayBuffer());
+                ffmpegInstance.FS('writeFile', 'input.webm', webmData);
+                await ffmpegInstance.run('-i','input.webm','-c:v','libx264','-preset','fast','-crf','22','-movflags','+faststart','output.mp4');
+                const mp4Data = ffmpegInstance.FS('readFile','output.mp4');
+                const mp4Blob = new Blob([mp4Data.buffer], { type: 'video/mp4' });
+                const mp4Url = URL.createObjectURL(mp4Blob);
+                const a = document.createElement('a');
+                a.href = mp4Url; a.download = 'sim3colts_' + Date.now() + '.mp4'; a.click();
+                btn.textContent = '✓ MP4 Downloaded'; btn.style.color = '#34d399';
+            } catch(e) {
+                btn.textContent = '✗ Conversion failed — try WebM'; btn.style.color = '#f87171';
+                btn.disabled = false;
+                console.error('MP4 convert:', e);
+            }
+        };
+    }
+
+    function closeRecModal() {
+        document.getElementById('rec-modal').style.display = 'none';
+    }
+    </script>
+
+    <!-- ═══ DOWNLOAD MODAL ═══ -->
+    <div id="rec-modal" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(2,6,23,0.85);align-items:center;justify-content:center;">
+        <div style="background:#0f172a;border:1px solid rgba(148,163,184,0.2);border-radius:16px;padding:32px 28px;width:92%;max-width:360px;text-align:center;">
+            <div style="font-size:13px;font-family:monospace;color:#475569;letter-spacing:0.15em;margin-bottom:8px;">RECORDING COMPLETE</div>
+            <div style="font-size:22px;font-weight:800;color:#e2e8f0;margin-bottom:24px;">Download Sim</div>
+            <button id="rec-dl-webm" style="display:block;width:100%;padding:14px;border-radius:10px;border:1px solid rgba(56,189,248,0.4);background:rgba(56,189,248,0.1);color:#38bdf8;font-size:13px;font-family:monospace;cursor:pointer;margin-bottom:10px;letter-spacing:0.08em;">
+                ⬇ WebM — Best for Web &amp; Android
+            </button>
+            <button id="rec-dl-mp4" style="display:block;width:100%;padding:14px;border-radius:10px;border:1px solid rgba(168,85,247,0.4);background:rgba(168,85,247,0.1);color:#a855f7;font-size:13px;font-family:monospace;cursor:pointer;margin-bottom:20px;letter-spacing:0.08em;">
+                ⬇ MP4 — Universal Compatibility
+            </button>
+            <button onclick="closeRecModal()" style="padding:8px 20px;border-radius:8px;border:1px solid rgba(148,163,184,0.2);background:transparent;color:#475569;font-size:11px;font-family:monospace;cursor:pointer;">
+                Close
+            </button>
+        </div>
+    </div>
+
+
+<!-- ═══════════════════════════════════════════════
+     VIDEO PLAYER SCREEN
+═══════════════════════════════════════════════ -->
+<div id="video-screen" style="display:none;position:fixed;inset:0;z-index:9998;background:#020617;flex-direction:column;align-items:center;justify-content:center;">
+    <!-- back button -->
+    <button onclick="closeVideoScreen()" style="position:absolute;top:16px;left:16px;padding:8px 16px;border-radius:8px;border:1px solid rgba(148,163,184,0.2);background:rgba(15,23,42,0.8);color:#94a3b8;font-size:11px;font-family:monospace;cursor:pointer;z-index:10;letter-spacing:0.08em;">⇦ BACK</button>
+    <!-- engine label -->
+    <div id="video-engine-label" style="position:absolute;top:16px;left:50%;transform:translateX(-50%);font-size:10px;font-family:monospace;color:#475569;letter-spacing:0.2em;text-transform:uppercase;"></div>
+    <!-- download button -->
+    <div style="position:absolute;top:12px;right:16px;display:flex;gap:8px;">
+        <button id="video-dl-webm" onclick="downloadCurrentVideo('webm')" style="padding:7px 12px;border-radius:8px;border:1px solid rgba(56,189,248,0.4);background:rgba(56,189,248,0.1);color:#38bdf8;font-size:10px;font-family:monospace;cursor:pointer;letter-spacing:0.05em;">⬇ WebM</button>
+        <button id="video-dl-mp4" onclick="downloadCurrentVideo('mp4')" style="padding:7px 12px;border-radius:8px;border:1px solid rgba(168,85,247,0.4);background:rgba(168,85,247,0.1);color:#a855f7;font-size:10px;font-family:monospace;cursor:pointer;letter-spacing:0.05em;">⬇ MP4</button>
+        <button onclick="renderNewVideo(currentVideoEngine)" style="padding:7px 12px;border-radius:8px;border:1px solid rgba(20,184,166,0.4);background:rgba(20,184,166,0.1);color:#14b8a6;font-size:10px;font-family:monospace;cursor:pointer;letter-spacing:0.05em;">↻ New</button>
+    </div>
+    <!-- the video element -->
+    <video id="sim-video" controls loop playsinline
+        style="max-width:min(100vw,900px);max-height:calc(100vh - 120px);width:100%;border-radius:12px;box-shadow:0 0 60px rgba(0,0,0,0.8);background:#000;">
+    </video>
+    <!-- timeline / speed controls -->
+    <div style="display:flex;gap:12px;align-items:center;margin-top:14px;flex-wrap:wrap;justify-content:center;">
+        <span style="font-size:10px;font-family:monospace;color:#475569;">SPEED</span>
+        <button class="speed-btn" onclick="setPlaybackSpeed(0.25)" style="padding:5px 10px;border-radius:6px;border:1px solid rgba(148,163,184,0.15);background:rgba(148,163,184,0.05);color:#94a3b8;font-size:10px;font-family:monospace;cursor:pointer;">0.25×</button>
+        <button class="speed-btn" onclick="setPlaybackSpeed(0.5)" style="padding:5px 10px;border-radius:6px;border:1px solid rgba(148,163,184,0.15);background:rgba(148,163,184,0.05);color:#94a3b8;font-size:10px;font-family:monospace;cursor:pointer;">0.5×</button>
+        <button class="speed-btn active-speed" onclick="setPlaybackSpeed(1)" style="padding:5px 10px;border-radius:6px;border:1px solid rgba(56,189,248,0.5);background:rgba(56,189,248,0.12);color:#38bdf8;font-size:10px;font-family:monospace;cursor:pointer;">1×</button>
+        <button class="speed-btn" onclick="setPlaybackSpeed(2)" style="padding:5px 10px;border-radius:6px;border:1px solid rgba(148,163,184,0.15);background:rgba(148,163,184,0.05);color:#94a3b8;font-size:10px;font-family:monospace;cursor:pointer;">2×</button>
+        <button class="speed-btn" onclick="setPlaybackSpeed(4)" style="padding:5px 10px;border-radius:6px;border:1px solid rgba(148,163,184,0.15);background:rgba(148,163,184,0.05);color:#94a3b8;font-size:10px;font-family:monospace;cursor:pointer;">4×</button>
+    </div>
+    <div id="video-no-video" style="display:none;text-align:center;padding:48px 24px;">
+        <div style="font-size:40px;margin-bottom:12px;">🎬</div>
+        <div style="font-size:16px;font-weight:700;color:#e2e8f0;margin-bottom:8px;">No video yet</div>
+        <div style="font-size:12px;color:#64748b;margin-bottom:24px;">Generate a high-quality pre-rendered video of this simulation.</div>
+        <button id="video-render-start-btn" onclick="renderNewVideo(currentVideoEngine)" style="padding:14px 32px;border-radius:10px;border:1px solid rgba(20,184,166,0.5);background:rgba(20,184,166,0.15);color:#14b8a6;font-size:13px;font-family:monospace;cursor:pointer;letter-spacing:0.08em;">⚙ Generate Video</button>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     OFFLINE RENDER PROGRESS OVERLAY
+═══════════════════════════════════════════════ -->
+<div id="render-overlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(2,6,23,0.97);align-items:center;justify-content:center;flex-direction:column;">
+    <div style="text-align:center;max-width:400px;width:90%;padding:0 20px;">
+        <div style="font-size:11px;font-family:monospace;color:#475569;letter-spacing:0.2em;text-transform:uppercase;margin-bottom:12px;" id="render-engine-label">V1 — RENDERING</div>
+        <div style="font-size:32px;font-weight:800;color:#e2e8f0;margin-bottom:4px;" id="render-pct">0%</div>
+        <div style="font-size:11px;font-family:monospace;color:#64748b;margin-bottom:24px;" id="render-detail">Initialising physics…</div>
+        <div style="width:100%;height:4px;background:rgba(148,163,184,0.1);border-radius:2px;overflow:hidden;margin-bottom:24px;">
+            <div id="render-bar" style="height:4px;width:0%;background:linear-gradient(90deg,#38bdf8,#a855f7);border-radius:2px;transition:width 0.3s;"></div>
+        </div>
+        <div style="font-size:10px;font-family:monospace;color:#334155;">Rendering at full quality · Do not close tab</div>
+        <button onclick="cancelRender()" style="margin-top:20px;padding:8px 20px;border-radius:8px;border:1px solid rgba(148,163,184,0.15);background:transparent;color:#475569;font-size:11px;font-family:monospace;cursor:pointer;">Cancel</button>
+    </div>
+</div>
+
+<!-- Hidden render canvas — full quality 720p, never shown -->
+<canvas id="render-canvas" style="display:none;" width="1280" height="720"></canvas>
+
+<script>
+// ══════════════════════════════════════════════════════
+// VIDEO STORAGE (IndexedDB)
+// ══════════════════════════════════════════════════════
+const VIDEO_DB_NAME = 'sim3colts_videos';
+const VIDEO_DB_VER  = 1;
+let videoDB = null;
+
+function openVideoDB() {
+    return new Promise((res, rej) => {
+        if (videoDB) { res(videoDB); return; }
+        const req = indexedDB.open(VIDEO_DB_NAME, VIDEO_DB_VER);
+        req.onupgradeneeded = e => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains('videos'))
+                db.createObjectStore('videos', { keyPath: 'engine' });
+        };
+        req.onsuccess  = e => { videoDB = e.target.result; res(videoDB); };
+        req.onerror    = () => rej(req.error);
+    });
+}
+
+async function saveVideoBlob(engine, blob) {
+    const db = await openVideoDB();
+    return new Promise((res, rej) => {
+        const tx = db.transaction('videos', 'readwrite');
+        tx.objectStore('videos').put({ engine, blob, ts: Date.now() });
+        tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+    });
+}
+
+async function loadVideoBlob(engine) {
+    const db = await openVideoDB();
+    return new Promise((res, rej) => {
+        const tx = db.transaction('videos', 'readonly');
+        const req = tx.objectStore('videos').get(engine);
+        req.onsuccess = () => res(req.result ? req.result.blob : null);
+        req.onerror   = () => rej(req.error);
+    });
+}
+
+// ══════════════════════════════════════════════════════
+// VIDEO WATCH FLOW
+// ══════════════════════════════════════════════════════
+let currentVideoEngine = null;
+let currentVideoBlob   = null;
+
+async function watchVideo(engine) {
+    currentVideoEngine = engine;
+    const labels = { v1:'V1 — Classic Engine', v2:'V2 — Deep Scan Engine', v3:'V3 — Playback Engine' };
+    document.getElementById('video-engine-label').textContent = labels[engine] || engine.toUpperCase();
+
+    const screen = document.getElementById('video-screen');
+    const videoEl = document.getElementById('sim-video');
+    const noVideoEl = document.getElementById('video-no-video');
+    screen.style.display = 'flex';
+
+    // Update splash button label
+    updateWatchBtnLabels(engine, 'loading');
+
+    let blob = null;
+    try { blob = await loadVideoBlob(engine); } catch(e) { console.warn('IDB load fail:', e); }
+
+    if (blob) {
+        currentVideoBlob = blob;
+        videoEl.src = URL.createObjectURL(blob);
+        videoEl.style.display = 'block';
+        noVideoEl.style.display = 'none';
+        videoEl.play();
+    } else {
+        videoEl.style.display = 'none';
+        noVideoEl.style.display = 'block';
+        currentVideoBlob = null;
+    }
+    updateWatchBtnLabels(engine, 'ready');
+}
+
+function closeVideoScreen() {
+    document.getElementById('video-screen').style.display = 'none';
+    const v = document.getElementById('sim-video');
+    v.pause(); v.src = '';
+    currentVideoEngine = null;
+}
+
+function setPlaybackSpeed(s) {
+    document.getElementById('sim-video').playbackRate = s;
+    document.querySelectorAll('.speed-btn').forEach(b => {
+        const isActive = b.textContent.trim() === s + '×';
+        b.style.borderColor = isActive ? 'rgba(56,189,248,0.5)' : 'rgba(148,163,184,0.15)';
+        b.style.background  = isActive ? 'rgba(56,189,248,0.12)' : 'rgba(148,163,184,0.05)';
+        b.style.color       = isActive ? '#38bdf8' : '#94a3b8';
+    });
+}
+
+async function downloadCurrentVideo(fmt) {
+    if (!currentVideoBlob) { alert('No video loaded'); return; }
+    if (fmt === 'webm') {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(currentVideoBlob);
+        a.download = 'sim3colts_' + (currentVideoEngine||'') + '_' + Date.now() + '.webm';
+        a.click(); return;
+    }
+    // MP4 via ffmpeg.wasm
+    const btn = document.getElementById('video-dl-mp4');
+    btn.textContent = '⚙…'; btn.disabled = true;
+    try {
+        if (!window.FFmpeg) {
+            const s = document.createElement('script');
+            s.src = 'https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js';
+            document.head.appendChild(s);
+            await new Promise((res, rej) => { s.onload=res; s.onerror=()=>rej(new Error('load fail')); });
+        }
+        await loadFFmpeg();
+        const webmData = new Uint8Array(await currentVideoBlob.arrayBuffer());
+        ffmpegInstance.FS('writeFile', 'input.webm', webmData);
+        await ffmpegInstance.run('-i','input.webm','-c:v','libx264','-preset','fast','-crf','22','-movflags','+faststart','output.mp4');
+        const mp4Data = ffmpegInstance.FS('readFile','output.mp4');
+        const mp4Blob = new Blob([mp4Data.buffer], { type:'video/mp4' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(mp4Blob);
+        a.download = 'sim3colts_' + (currentVideoEngine||'') + '_' + Date.now() + '.mp4';
+        a.click();
+        btn.textContent = '✓ MP4'; btn.style.color = '#34d399';
+    } catch(e) {
+        btn.textContent = '✗ MP4'; btn.style.color = '#f87171'; btn.disabled = false;
+        console.error('MP4:', e);
+    }
+}
+
+function updateWatchBtnLabels(engine, state) {
+    ['v1','v2','v3'].forEach(v => {
+        const btn = document.getElementById(v + '-watch-btn');
+        if (!btn) return;
+        if (state === 'loading') {
+            btn.textContent = '⏳ Loading…';
+        } else {
+            // Check if this engine has a stored video
+            loadVideoBlob(v).then(b => {
+                btn.textContent = b ? '▶ Watch Video' : '▶ Generate & Watch';
+                btn.style.opacity = '1';
+            });
+        }
+    });
+}
+
+// Init watch button labels on load
+window.addEventListener('DOMContentLoaded', () => {
+    ['v1','v2','v3'].forEach(v => {
+        loadVideoBlob(v).then(b => {
+            const btn = document.getElementById(v + '-watch-btn');
+            if (btn) btn.textContent = b ? '▶ Watch Video' : '▶ Generate & Watch';
+        }).catch(() => {});
+    });
+});
+
+// ══════════════════════════════════════════════════════
+// OFFLINE RENDERER
+// Renders the sim onto a hidden 1280×720 canvas at a
+// controlled 30fps cadence using setTimeout chains,
+// records via MediaRecorder, saves to IndexedDB.
+// ══════════════════════════════════════════════════════
+let renderCancelled = false;
+const RENDER_FPS    = 30;
+const RENDER_SECS   = IS_MOBILE ? 20 : 40; // shorter on mobile to be polite
+const RENDER_FRAMES = RENDER_FPS * RENDER_SECS;
+
+async function renderNewVideo(engine) {
+    if (!engine) { alert('Select an engine first'); return; }
+    renderCancelled = false;
+    currentVideoEngine = engine;
+
+    // Show render overlay
+    const ov = document.getElementById('render-overlay');
+    const labels = { v1:'V1 — Classic Engine', v2:'V2 — Deep Scan', v3:'V3 — Playback' };
+    document.getElementById('render-engine-label').textContent = (labels[engine]||engine).toUpperCase() + ' · RENDERING';
+    document.getElementById('render-pct').textContent = '0%';
+    document.getElementById('render-detail').textContent = 'Initialising physics…';
+    document.getElementById('render-bar').style.width = '0%';
+    document.getElementById('video-no-video').style.display = 'none';
+    ov.style.display = 'flex';
+
+    const rc = document.getElementById('render-canvas');
+    rc.width = 1280; rc.height = 720;
+    const rctx = rc.getContext('2d');
+
+    // Build a self-contained physics world for rendering
+    // We clone the logic from the chosen engine at reduced ball count
+    // to keep render time sane, but at full visual quality.
+    const rWorld = buildRenderWorld(engine, rc, rctx);
+
+    // Set up MediaRecorder on the render canvas stream
+    const stream = rc.captureStream(RENDER_FPS);
+    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+        ? 'video/webm;codecs=vp9' : 'video/webm';
+    const mr = new MediaRecorder(stream, {
+        mimeType,
+        videoBitsPerSecond: 6_000_000
+    });
+    const chunks = [];
+    mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    mr.start(Math.round(1000 / RENDER_FPS));
+
+    const frameMs = 1000 / RENDER_FPS;
+    let frameCount = 0;
+
+    // Render loop — setTimeout-based so it doesn't block the UI thread
+    // We batch 3 frames per tick to keep overhead low
+    const BATCH = IS_MOBILE ? 1 : 3;
+
+    function renderBatch() {
+        if (renderCancelled) {
+            mr.stop(); ov.style.display = 'none';
+            return;
+        }
+        for (let b = 0; b < BATCH && frameCount < RENDER_FRAMES; b++) {
+            rWorld.tick();
+            rWorld.draw();
+            frameCount++;
+        }
+        const pct = Math.round(frameCount / RENDER_FRAMES * 100);
+        document.getElementById('render-pct').textContent = pct + '%';
+        document.getElementById('render-bar').style.width = pct + '%';
+        document.getElementById('render-detail').textContent =
+            'Frame ' + frameCount + ' / ' + RENDER_FRAMES + '  ·  ' +
+            (rWorld.ticks || 0) + ' ticks  ·  chaos ' + (rWorld.chaos || 0).toFixed(2);
+
+        if (frameCount < RENDER_FRAMES) {
+            setTimeout(renderBatch, 0);
+        } else {
+            // Done — stop recorder, save blob
+            document.getElementById('render-detail').textContent = 'Finalising…';
+            mr.onstop = async () => {
+                const blob = new Blob(chunks, { type: 'video/webm' });
+                try { await saveVideoBlob(engine, blob); } catch(e) { console.warn('IDB save:', e); }
+                ov.style.display = 'none';
+                // Open the player immediately
+                currentVideoBlob = blob;
+                const videoEl = document.getElementById('sim-video');
+                videoEl.src = URL.createObjectURL(blob);
+                videoEl.style.display = 'block';
+                document.getElementById('video-no-video').style.display = 'none';
+                const screen = document.getElementById('video-screen');
+                if (screen.style.display !== 'flex') {
+                    screen.style.display = 'flex';
+                    const lbl = { v1:'V1 — Classic Engine', v2:'V2 — Deep Scan Engine', v3:'V3 — Playback Engine' };
+                    document.getElementById('video-engine-label').textContent = lbl[engine]||engine;
+                }
+                videoEl.play();
+                updateWatchBtnLabels(engine, 'ready');
+            };
+            mr.stop();
+        }
+    }
+    setTimeout(renderBatch, 50);
+}
+
+function cancelRender() {
+    renderCancelled = true;
+}
+
+// ══════════════════════════════════════════════════════
+// RENDER WORLD FACTORY
+// Builds a lightweight self-contained sim for offline
+// rendering — shares the same physics as each engine
+// but runs on the hidden 1280×720 canvas.
+// ══════════════════════════════════════════════════════
+function buildRenderWorld(engine, canvas, ctx) {
+    const W = canvas.width, H = canvas.height;
+    const CX = W/2, CY = H/2;
+    const BS = Math.min(W,H)/800;  // baseScale
+
+    // Colour palette (spectral, same as main sims)
+    const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#3b82f6','#4f46e5','#a855f7'];
+
+    // Geometry — Square by default, cycles every ~15s
+    const GEOS = [
+        { pts: [[-150,-150],[150,-150],[150,150],[-150,150]], scale: 1 },
+        { pts: [[0,-180],[156,90],[-156,90]], scale: 1 },
+        { pts: Array.from({length:6},(_,i)=>[Math.cos(i*Math.PI/3-Math.PI/6)*165,Math.sin(i*Math.PI/3-Math.PI/6)*165]), scale: 1 },
+    ];
+    let geoIdx = 0, geo = GEOS[0];
+    let geoFrames = 0;
+
+    // Balls — fewer than live sim (21 instead of 49) for render speed
+    const BALL_COUNT = 3; // 3 per colour group = 21 total
+    const balls = [];
+    for (let g = 0; g < 7; g++) {
+        for (let b = 0; b < BALL_COUNT; b++) {
+            const speed = 2.0;
+            const angle = Math.random() * Math.PI * 2;
+            balls.push({
+                x: (Math.random()*80-40), y: (Math.random()*80-40),
+                vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed,
+                winding: 0, ticksSinceHit: 0, lastAngle: undefined,
+                path: [], groupId: g, color: COLORS[g],
+                type: Math.random() > 0.5 ? 'smith' : 'blade'
+            });
+        }
+    }
+
+    let ticks = 0, inversions = 0, chaos = 0;
+    let lastInversionTime = -9999;
+    let lastInversionData = null;
+    let munkerOffset = 0;
+
+    function tick() {
+        // Physics
+        balls.forEach(b => {
+            b.x += b.vx; b.y += b.vy; b.ticksSinceHit++;
+            // Boundary bounce (poly)
+            const pts = geo.pts.map(p => [p[0]*geo.scale, p[1]*geo.scale]);
+            let bounced = false;
+            for (let i = 0; i < pts.length; i++) {
+                const a = pts[i], bpt = pts[(i+1)%pts.length];
+                const nx = -(bpt[1]-a[1]), ny = bpt[0]-a[0];
+                const len = Math.sqrt(nx*nx+ny*ny);
+                const nxn = nx/len, nyn = ny/len;
+                const dot = (b.x-a[0])*nxn + (b.y-a[1])*nyn;
+                if (dot > 0) {
+                    b.x -= dot*nxn*2; b.y -= dot*nyn*2;
+                    const vdot = b.vx*nxn + b.vy*nyn;
+                    b.vx -= 2*vdot*nxn; b.vy -= 2*vdot*nyn;
+                    b.ticksSinceHit = 0;
+                    // winding
+                    const angle = Math.atan2(b.y, b.x);
+                    if (b.lastAngle !== undefined) {
+                        let delta = angle - b.lastAngle;
+                        if (delta > Math.PI) delta -= 2*Math.PI;
+                        if (delta < -Math.PI) delta += 2*Math.PI;
+                        b.winding += delta / (2*Math.PI);
+                    }
+                    b.lastAngle = angle;
+                    bounced = true; break;
+                }
+            }
+            // Chaos (simplified)
+            chaos = chaos*0.999 + Math.sqrt(b.vx*b.vx+b.vy*b.vy)*0.001;
+            // Trail
+            if (ticks % 5 === 0) {
+                b.path.push({x:b.x, y:b.y});
+                if (b.path.length > 30) b.path.shift();
+            }
+        });
+
+        // Exclusion
+        for (let i = 0; i < balls.length; i++) {
+            for (let j = i+1; j < balls.length; j++) {
+                const dx = balls[i].x-balls[j].x, dy = balls[i].y-balls[j].y;
+                if (dx*dx+dy*dy < 625) {
+                    balls[i].vx *= -1.05; balls[i].vy *= -1.05;
+                    balls[j].vx *= -1.05; balls[j].vy *= -1.05;
+                }
+            }
+        }
+
+        // Inversion — geo scale grows
+        geo.scale += 0.003;
+        if (geo.scale > 4.5) {
+            inversions++;
+            geo.scale = 0.7;
+            balls.forEach(b => { b.vx *= -0.9; b.vy *= -0.9; b.x *= 0.5; b.y *= 0.5; });
+            const wl = getDominantWavelength(balls);
+            lastInversionTime = ticks;
+            lastInversionData = {
+                inversions, chaos: chaos.toFixed(3), ticks,
+                nm: wl.nm, wavelabel: wl.label, wavehex: wl.hex,
+                topWindings: balls.slice(0,5).map(b=>b.winding.toFixed(2)).join(' │ ')
+            };
+        }
+
+        // Cycle geometry every ~18 seconds (18*30=540 frames)
+        geoFrames++;
+        if (geoFrames > 540) { geoFrames = 0; geoIdx = (geoIdx+1) % GEOS.length; geo = GEOS[geoIdx]; geo.scale = 1; }
+
+        munkerOffset = Math.sin(ticks*0.015)*38*3 + ticks*0.01;
+        ticks++;
+    }
+
+    function draw() {
+        ctx.clearRect(0,0,W,H);
+        ctx.fillStyle = '#020617'; ctx.fillRect(0,0,W,H);
+
+        // Dark mask with geometry cutout
+        ctx.fillStyle = 'rgba(2,6,23,0.72)';
+        ctx.beginPath(); ctx.rect(0,0,W,H);
+        const pts = geo.pts.map(p => [p[0]*geo.scale*BS, p[1]*geo.scale*BS]);
+        ctx.moveTo(CX+pts[pts.length-1][0], CY+pts[pts.length-1][1]);
+        for (let i = pts.length-1; i >= 0; i--) ctx.lineTo(CX+pts[i][0], CY+pts[i][1]);
+        ctx.fill('evenodd');
+
+        // Munker-White stripes
+        const mStep = 38;
+        const mStartY = (munkerOffset % mStep) - mStep;
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(CX+pts[0][0], CY+pts[0][1]);
+        for (let i=1;i<pts.length;i++) ctx.lineTo(CX+pts[i][0], CY+pts[i][1]);
+        ctx.closePath(); ctx.clip();
+        const bw = W*0.08, lbx = W*0.18, rbx = W*0.74;
+        ctx.globalAlpha = 0.3; ctx.fillStyle='#808080';
+        ctx.fillRect(lbx,0,bw,H); ctx.fillRect(rbx,0,bw,H);
+        ctx.globalAlpha = 1;
+        for (let y=mStartY;y<H+mStep;y+=mStep) {
+            ctx.fillStyle='rgba(0,0,0,0.88)'; ctx.fillRect(0,y,W,1);
+            ctx.fillStyle='rgba(255,255,255,0.88)'; ctx.fillRect(rbx,y,bw,1);
+        }
+        ctx.restore();
+
+        // Connections — full gradient quality at render resolution
+        ctx.lineWidth = 1.5; ctx.globalCompositeOperation = 'hard-light';
+        const maxD = 150*geo.scale*BS;
+        for (let i=0;i<balls.length;i++) {
+            for (let j=i+1;j<balls.length;j++) {
+                const dx=balls[i].x*BS-balls[j].x*BS, dy=balls[i].y*BS-balls[j].y*BS;
+                const d2=dx*dx+dy*dy;
+                if (d2 > maxD*maxD) continue;
+                const dist = Math.sqrt(d2);
+                const opacity = (1-dist/maxD)*0.8;
+                const wx=(balls[i].vx+balls[j].vx)*10*BS, wy=(balls[i].vy+balls[j].vy)*10*BS;
+                ctx.beginPath();
+                ctx.moveTo(CX+balls[i].x*BS, CY+balls[i].y*BS);
+                ctx.bezierCurveTo(CX+balls[i].x*BS+wx,CY+balls[i].y*BS-wy,CX+balls[j].x*BS-wx,CY+balls[j].y*BS+wy,CX+balls[j].x*BS,CY+balls[j].y*BS);
+                const gr = ctx.createLinearGradient(CX+balls[i].x*BS,CY+balls[i].y*BS,CX+balls[j].x*BS,CY+balls[j].y*BS);
+                gr.addColorStop(0, balls[i].color+Math.floor(opacity*255).toString(16).padStart(2,'0'));
+                gr.addColorStop(1, balls[j].color+Math.floor(opacity*255).toString(16).padStart(2,'0'));
+                ctx.strokeStyle=gr; ctx.stroke();
+            }
+        }
+        ctx.globalCompositeOperation = 'source-over';
+
+        // Trails + balls
+        balls.forEach(b => {
+            if (b.path.length > 1) {
+                const wb = Math.min(1,Math.abs(b.winding)/5);
+                ctx.beginPath(); ctx.moveTo(CX+b.path[0].x*BS, CY+b.path[0].y*BS);
+                for (let p=1;p<b.path.length;p++) ctx.lineTo(CX+b.path[p].x*BS, CY+b.path[p].y*BS);
+                ctx.strokeStyle = b.color + Math.floor((0.25+wb*0.55)*255).toString(16).padStart(2,'0');
+                ctx.lineWidth = b.type==='smith' ? 2.5+wb*2 : 1+wb*1.5; ctx.stroke();
+            }
+        });
+        balls.forEach(b => {
+            const wb = Math.min(1,Math.abs(b.winding)/5);
+            const r = (b.type==='smith'?7:4.5)*BS*(1+wb*0.5);
+            ctx.shadowBlur = wb*28; ctx.shadowColor = b.color;
+            ctx.beginPath(); ctx.arc(CX+b.x*BS, CY+b.y*BS, r, 0, Math.PI*2);
+            ctx.fillStyle = b.color; ctx.fill();
+            ctx.beginPath(); ctx.arc(CX+b.x*BS, CY+b.y*BS, r*0.35, 0, Math.PI*2);
+            ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.fill();
+            ctx.shadowBlur = 0;
+        });
+
+        // Geo boundary
+        ctx.strokeStyle = '#334155'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(CX+pts[0][0], CY+pts[0][1]);
+        for(let i=1;i<pts.length;i++) ctx.lineTo(CX+pts[i][0], CY+pts[i][1]);
+        ctx.closePath(); ctx.stroke();
+
+        // Inversion overlay (same side-panel style)
+        if (lastInversionData && ticks - lastInversionTime < 120) {
+            const alpha = Math.max(0, 1 - (ticks-lastInversionTime)/120);
+            const d = lastInversionData;
+            ctx.save(); ctx.globalAlpha = alpha;
+            const pw = 230, ph = 200, px = W-pw-14, py = H/2-ph/2;
+            ctx.fillStyle = 'rgba(15,23,42,0.95)';
+            ctx.beginPath(); if(ctx.roundRect) ctx.roundRect(px,py,pw,ph,10); else ctx.rect(px,py,pw,ph);
+            ctx.fill();
+            ctx.fillStyle = d.wavehex; ctx.fillRect(px,py,3,ph);
+            ctx.textAlign='left'; ctx.font='bold 9px monospace'; ctx.fillStyle='#475569';
+            ctx.fillText('INVERSION  ·  RENDER', px+12, py+16);
+            ctx.font='bold 40px monospace'; ctx.fillStyle='#e2e8f0';
+            ctx.fillText('#'+d.inversions, px+12, py+60);
+            ctx.font='9px monospace'; ctx.fillStyle='#64748b';
+            ctx.fillText('CHAOS  '+d.chaos, px+12, py+78);
+            ctx.fillText('λ  '+d.nm+'nm  '+d.wavelabel, px+12, py+96);
+            ctx.restore();
+        }
+
+        // Engine watermark bottom-left
+        ctx.save(); ctx.globalAlpha = 0.3;
+        ctx.font = '11px monospace'; ctx.fillStyle = '#475569'; ctx.textAlign = 'left';
+        ctx.fillText('sim3colts · ' + currentVideoEngine?.toUpperCase(), 16, H-16);
+        ctx.restore();
+    }
+
+    return { tick, draw, get ticks() { return ticks; }, get chaos() { return chaos; } };
 }
 </script>
 
