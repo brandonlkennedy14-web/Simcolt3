@@ -1897,6 +1897,8 @@ function App(){
   const[sim3Balls,setSim3Balls]=useState([]); // from genesis_brain sim3 namespace
   const[sim3Chaos,setSim3Chaos]=useState(null);
   const[perfMode,setPerfMode]=useState(false);
+  const[loadingBand,setLoadingBand]=useState(false);
+  const[preRenderMode,setPreRenderMode]=useState(false);
   const[flipLabel,setFlipLabel]=useState('');
   const[extraInst,setExtraInst]=useState('none'); // 'none'|'arp'|'perc'
   const[progWindow,setProgWindow]=useState([]); // top-level chaos_ratio from sim3
