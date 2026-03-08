@@ -2626,12 +2626,17 @@ window.initV3 = initV3;
     <div style="position:absolute;top:12px;right:16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
         <button id="video-dl-webm" onclick="downloadCurrentVideo('webm')" style="padding:7px 12px;border-radius:8px;border:1px solid rgba(56,189,248,0.4);background:rgba(56,189,248,0.1);color:#38bdf8;font-size:10px;font-family:monospace;cursor:pointer;letter-spacing:0.05em;">⬇ WebM</button>
         <button id="video-dl-mp4" onclick="downloadCurrentVideo('mp4')" style="padding:7px 12px;border-radius:8px;border:1px solid rgba(168,85,247,0.4);background:rgba(168,85,247,0.1);color:#a855f7;font-size:10px;font-family:monospace;cursor:pointer;letter-spacing:0.05em;">⬇ MP4</button>
-        <button onclick="promptRenderQuality()" style="padding:7px 12px;border-radius:8px;border:1px solid rgba(20,184,166,0.4);background:rgba(20,184,166,0.1);color:#14b8a6;font-size:10px;font-family:monospace;cursor:pointer;letter-spacing:0.05em;">↻ New</button>
+        <button onclick="promptRenderQuality()" style="padding:7px 12px;border-radius:8px;border:1px solid rgba(20,184,166,0.4);background:rgba(20,184,166,0.1);color:#14b8a6;font-size:10px;font-family:monospace;cursor:pointer;letter-spacing:0.05em;touch-action:manipulation;">＋ Add Segment</button>
     </div>
     <!-- the video element -->
-    <video id="sim-video" controls loop playsinline
-        style="max-width:min(100vw,900px);max-height:calc(100vh - 120px);width:100%;border-radius:12px;box-shadow:0 0 60px rgba(0,0,0,0.8);background:#000;">
+    <video id="sim-video" controls playsinline
+        style="max-width:min(100vw,900px);max-height:calc(100vh - 160px);width:100%;border-radius:12px;box-shadow:0 0 60px rgba(0,0,0,0.8);background:#000;">
     </video>
+    <!-- Playlist info bar -->
+    <div style="display:flex;align-items:center;gap:12px;margin-top:8px;flex-wrap:wrap;justify-content:center;">
+        <span id="playlist-counter" style="font-size:10px;font-family:monospace;color:#475569;letter-spacing:0.08em;"></span>
+        <span id="playlist-info" style="font-size:10px;font-family:monospace;color:#334155;"></span>
+    </div>
     <!-- timeline / speed controls -->
     <div style="display:flex;gap:12px;align-items:center;margin-top:14px;flex-wrap:wrap;justify-content:center;">
         <span style="font-size:10px;font-family:monospace;color:#475569;">SPEED</span>
@@ -2641,14 +2646,43 @@ window.initV3 = initV3;
         <button class="speed-btn" onclick="setPlaybackSpeed(2)" style="padding:5px 10px;border-radius:6px;border:1px solid rgba(148,163,184,0.15);background:rgba(148,163,184,0.05);color:#94a3b8;font-size:10px;font-family:monospace;cursor:pointer;">2×</button>
         <button class="speed-btn" onclick="setPlaybackSpeed(4)" style="padding:5px 10px;border-radius:6px;border:1px solid rgba(148,163,184,0.15);background:rgba(148,163,184,0.05);color:#94a3b8;font-size:10px;font-family:monospace;cursor:pointer;">4×</button>
     </div>
-    <div id="video-no-video" style="display:none;text-align:center;padding:48px 24px;">
-        <div style="font-size:40px;margin-bottom:12px;">🎬</div>
-        <div style="font-size:16px;font-weight:700;color:#e2e8f0;margin-bottom:8px;">No video yet</div>
-        <div style="font-size:12px;color:#64748b;margin-bottom:24px;">Generate a high-quality pre-rendered video of this simulation.</div>
-        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
-            <button onclick="renderNewVideo(currentVideoEngine,'mobile')" style="padding:12px 20px;border-radius:10px;border:1px solid rgba(56,189,248,0.5);background:rgba(56,189,248,0.1);color:#38bdf8;font-size:12px;font-family:monospace;cursor:pointer;letter-spacing:0.06em;">📱 Mobile Quality<br><span style="font-size:9px;opacity:0.7;">Fast · 20s · Flat lines</span></button>
-            <button onclick="renderNewVideo(currentVideoEngine,'desktop')" style="padding:12px 20px;border-radius:10px;border:1px solid rgba(168,85,247,0.5);background:rgba(168,85,247,0.1);color:#a855f7;font-size:12px;font-family:monospace;cursor:pointer;letter-spacing:0.06em;">🖥 Desktop Quality<br><span style="font-size:9px;opacity:0.7;">Full · 40s · Gradients</span></button>
+    <div id="video-no-video" style="display:none;text-align:center;padding:32px 20px;max-width:420px;margin:0 auto;">
+        <div style="font-size:36px;margin-bottom:10px;">🎬</div>
+        <div style="font-size:16px;font-weight:700;color:#e2e8f0;margin-bottom:6px;">Generate Simulation Video</div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:20px;">Each render continues from where the last one ended — building one continuous simulation.</div>
+
+        <!-- Duration slider -->
+        <div style="margin-bottom:20px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <span style="font-size:10px;font-family:monospace;color:#475569;letter-spacing:0.1em;">DURATION</span>
+                <span id="dur-label" style="font-size:14px;font-weight:700;color:#38bdf8;font-family:monospace;">30s</span>
+            </div>
+            <input type="range" id="dur-slider" min="10" max="120" step="10" value="30"
+                oninput="document.getElementById('dur-label').textContent=this.value+'s'"
+                style="width:100%;accent-color:#38bdf8;cursor:pointer;touch-action:manipulation;">
+            <div style="display:flex;justify-content:space-between;font-size:9px;font-family:monospace;color:#334155;margin-top:4px;">
+                <span>10s</span><span>30s</span><span>60s</span><span>120s</span>
+            </div>
         </div>
+
+        <!-- Segment info -->
+        <div id="seg-info" style="font-size:10px;font-family:monospace;color:#475569;margin-bottom:16px;min-height:16px;"></div>
+
+        <!-- Quality buttons -->
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+            <button onclick="renderNewVideo(currentVideoEngine,'mobile',+document.getElementById('dur-slider').value)"
+                style="flex:1;min-width:120px;padding:12px 10px;border-radius:10px;border:2px solid rgba(56,189,248,0.5);background:rgba(56,189,248,0.1);color:#38bdf8;font-size:12px;font-family:monospace;font-weight:700;cursor:pointer;touch-action:manipulation;">
+                📱 Mobile<br><span style="font-size:9px;opacity:0.7;">Fast · Flat render</span>
+            </button>
+            <button onclick="renderNewVideo(currentVideoEngine,'desktop',+document.getElementById('dur-slider').value)"
+                style="flex:1;min-width:120px;padding:12px 10px;border-radius:10px;border:2px solid rgba(168,85,247,0.5);background:rgba(168,85,247,0.1);color:#a855f7;font-size:12px;font-family:monospace;font-weight:700;cursor:pointer;touch-action:manipulation;">
+                🖥 Desktop<br><span style="font-size:9px;opacity:0.7;">Full gradients</span>
+            </button>
+        </div>
+        <button onclick="clearAndReset(currentVideoEngine)"
+            style="margin-top:12px;padding:8px 16px;border-radius:8px;border:1px solid rgba(239,68,68,0.3);background:transparent;color:#475569;font-size:10px;font-family:monospace;cursor:pointer;touch-action:manipulation;">
+            🗑 Clear all segments
+        </button>
     </div>
 </div>
 
@@ -2657,7 +2691,8 @@ window.initV3 = initV3;
 ═══════════════════════════════════════════════ -->
 <div id="render-overlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(2,6,23,0.97);align-items:center;justify-content:center;flex-direction:column;">
     <div style="text-align:center;max-width:400px;width:90%;padding:0 20px;">
-        <div style="font-size:11px;font-family:monospace;color:#475569;letter-spacing:0.2em;text-transform:uppercase;margin-bottom:12px;" id="render-engine-label">V1 — RENDERING</div>
+        <div style="font-size:11px;font-family:monospace;color:#475569;letter-spacing:0.2em;text-transform:uppercase;margin-bottom:4px;" id="render-engine-label">V1 — RENDERING</div>
+        <div style="font-size:10px;font-family:monospace;color:#334155;margin-bottom:8px;" id="render-seg-label"></div>
         <div style="font-size:32px;font-weight:800;color:#e2e8f0;margin-bottom:4px;" id="render-pct">0%</div>
         <div style="font-size:11px;font-family:monospace;color:#64748b;margin-bottom:24px;" id="render-detail">Initialising physics…</div>
         <div style="width:100%;height:4px;background:rgba(148,163,184,0.1);border-radius:2px;overflow:hidden;margin-bottom:24px;">
@@ -2676,7 +2711,7 @@ window.initV3 = initV3;
 // VIDEO STORAGE (IndexedDB)
 // ══════════════════════════════════════════════════════
 const VIDEO_DB_NAME = 'sim3colts_videos';
-const VIDEO_DB_VER  = 1;
+const VIDEO_DB_VER  = 3; // bumped — new schema with segments + physics
 let videoDB = null;
 
 function openVideoDB() {
@@ -2685,6 +2720,13 @@ function openVideoDB() {
         const req = indexedDB.open(VIDEO_DB_NAME, VIDEO_DB_VER);
         req.onupgradeneeded = e => {
             const db = e.target.result;
+            // segments store — each entry has array of video blobs
+            if (!db.objectStoreNames.contains('segments'))
+                db.createObjectStore('segments', { keyPath: 'key' });
+            // physics store — saves world state so "New" continues from here
+            if (!db.objectStoreNames.contains('physics'))
+                db.createObjectStore('physics', { keyPath: 'key' });
+            // legacy — keep for migration
             if (!db.objectStoreNames.contains('videos'))
                 db.createObjectStore('videos', { keyPath: 'engine' });
         };
@@ -2693,23 +2735,84 @@ function openVideoDB() {
     });
 }
 
-async function saveVideoBlob(engine, blob) {
+// ── Segment storage (array of blobs per key) ──────────────────
+async function appendSegment(key, segBlob, meta) {
     const db = await openVideoDB();
+    // Load existing, append, save back
+    const existing = await new Promise((res, rej) => {
+        const tx = db.transaction('segments','readonly');
+        const r = tx.objectStore('segments').get(key);
+        r.onsuccess = () => res(r.result);
+        r.onerror = () => res(null);
+    });
+    const segments = existing ? existing.segments : [];
+    segments.push({ blob: segBlob, ...meta, ts: Date.now() });
     return new Promise((res, rej) => {
-        const tx = db.transaction('videos', 'readwrite');
-        tx.objectStore('videos').put({ engine, blob, ts: Date.now() });
+        const tx = db.transaction('segments','readwrite');
+        tx.objectStore('segments').put({ key, segments, updatedAt: Date.now() });
         tx.oncomplete = res; tx.onerror = () => rej(tx.error);
     });
 }
 
-async function loadVideoBlob(engine) {
+async function loadSegments(key) {
     const db = await openVideoDB();
     return new Promise((res, rej) => {
-        const tx = db.transaction('videos', 'readonly');
-        const req = tx.objectStore('videos').get(engine);
-        req.onsuccess = () => res(req.result ? req.result.blob : null);
-        req.onerror   = () => rej(req.error);
+        const tx = db.transaction('segments','readonly');
+        const r = tx.objectStore('segments').get(key);
+        r.onsuccess = () => res(r.result ? r.result.segments : []);
+        r.onerror = () => res([]);
     });
+}
+
+async function clearSegments(key) {
+    const db = await openVideoDB();
+    return new Promise((res, rej) => {
+        const tx = db.transaction('segments','readwrite');
+        tx.objectStore('segments').delete(key);
+        tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+    });
+}
+
+// ── Physics snapshot storage ──────────────────────────────────
+async function savePhysicsState(key, state) {
+    const db = await openVideoDB();
+    return new Promise((res, rej) => {
+        const tx = db.transaction('physics','readwrite');
+        tx.objectStore('physics').put({ key, state, ts: Date.now() });
+        tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+    });
+}
+
+async function loadPhysicsState(key) {
+    const db = await openVideoDB();
+    return new Promise((res, rej) => {
+        const tx = db.transaction('physics','readonly');
+        const r = tx.objectStore('physics').get(key);
+        r.onsuccess = () => res(r.result ? r.result.state : null);
+        r.onerror = () => res(null);
+    });
+}
+
+// ── Legacy single-blob load (for migration) ──────────────────
+async function saveVideoBlob(engine, blob) {
+    // redirect to segments system
+    await appendSegment(engine, blob, { frames: 0, ticks: 0, legacy: true });
+}
+async function loadVideoBlob(engine) {
+    // try legacy store first, then new segments
+    try {
+        const db = await openVideoDB();
+        const r = await new Promise((res,rej) => {
+            const tx = db.transaction('videos','readonly');
+            const req = tx.objectStore('videos').get(engine);
+            req.onsuccess = () => res(req.result);
+            req.onerror = () => res(null);
+        });
+        if (r && r.blob) return r.blob;
+    } catch(e) {}
+    // fall through to segments
+    const segs = await loadSegments(engine);
+    return segs.length ? segs[segs.length-1].blob : null;
 }
 
 // ══════════════════════════════════════════════════════
@@ -2734,28 +2837,24 @@ window.watchVideo = async function watchVideo(engine) {
     // Update splash button label
     updateWatchBtnLabels(engine, 'loading');
 
-    // Try desktop quality first, then mobile
-    let blob = null;
-    let loadedQuality = null;
+    // Try desktop first, then mobile — load ALL segments
+    let segs = [];
+    let foundQuality = null;
     for (const q of ['desktop','mobile']) {
-        try { blob = await loadVideoBlob(engine + '_' + q); if (blob) { loadedQuality = q; break; } } catch(e) {}
+        try {
+            const s = await loadSegments(engine + '_' + q);
+            if (s && s.length > 0) { segs = s; foundQuality = q; break; }
+        } catch(e) {}
     }
-    // Also try legacy key (no quality suffix)
-    if (!blob) { try { blob = await loadVideoBlob(engine); if(blob) loadedQuality='legacy'; } catch(e){} }
+    currentRenderQuality = foundQuality || 'desktop';
 
-    if (blob) {
-        currentVideoBlob = blob;
-        videoEl.src = URL.createObjectURL(blob);
-        videoEl.style.display = 'block';
-        noVideoEl.style.display = 'none';
-        const lbl = { v1:'V1 — Classic Engine', v2:'V2 — Deep Scan Engine', v3:'V3 — Playback Engine' };
-        const qIcon = loadedQuality==='mobile' ? ' · 📱' : loadedQuality==='desktop' ? ' · 🖥' : '';
-        document.getElementById('video-engine-label').textContent = (lbl[engine]||engine) + qIcon;
-        videoEl.play();
+    if (segs.length > 0) {
+        playSegmentPlaylist(segs, engine, foundQuality);
     } else {
         videoEl.style.display = 'none';
         noVideoEl.style.display = 'block';
         currentVideoBlob = null;
+        refreshSegInfo(engine);
     }
     updateWatchBtnLabels(engine, 'ready');
 }
@@ -2858,45 +2957,75 @@ const RENDER_SECS   = IS_MOBILE ? 20 : 40; // shorter on mobile to be polite
 const RENDER_FRAMES = RENDER_FPS * RENDER_SECS;
 
 function promptRenderQuality() {
-    const engine = currentVideoEngine;
-    if (!engine) return;
-    // Show quality choice in the video-no-video section temporarily
-    const noVid = document.getElementById('video-no-video');
-    noVid.style.display = 'block';
+    // Show the generate panel
+    document.getElementById('video-no-video').style.display = 'block';
     document.getElementById('sim-video').style.display = 'none';
+    // Update segment info
+    refreshSegInfo(currentVideoEngine);
 }
 
-async function renderNewVideo(engine, quality) {
+async function refreshSegInfo(engine) {
+    if (!engine) return;
+    const key = engine + '_' + (currentRenderQuality||'desktop');
+    const segs = await loadSegments(key);
+    const el = document.getElementById('seg-info');
+    if (!el) return;
+    if (segs.length === 0) {
+        el.textContent = 'No segments yet — first render starts fresh';
+        el.style.color = '#475569';
+    } else {
+        const totalFrames = segs.reduce((a,s)=>a+(s.frames||0),0);
+        const totalTicks  = segs.reduce((a,s)=>a+(s.ticks||0),0);
+        el.innerHTML = `<span style="color:#14b8a6;">◈ ${segs.length} segment${segs.length>1?'s':''}</span>`
+            + ` · ${totalFrames} frames · ${Math.round(totalFrames/RENDER_FPS)}s total`
+            + ` · <span style="color:#38bdf8;">${totalTicks.toLocaleString()} ticks</span>`
+            + `<br><span style="color:#475569;font-size:9px;">Next render continues from tick ${totalTicks.toLocaleString()}</span>`;
+    }
+}
+
+let currentRenderQuality = 'desktop';
+
+async function renderNewVideo(engine, quality, durationSecs) {
     if (!engine) { alert('Select an engine first'); return; }
-    // quality: 'mobile' = flat lines, 21 balls, 20s
-    //          'desktop' = gradients, 42 balls, 40s
     if (!quality) quality = 'desktop';
+    if (!durationSecs || durationSecs < 5) durationSecs = 30;
+    currentRenderQuality = quality;
     renderCancelled = false;
     currentVideoEngine = engine;
 
     const isMobileQuality = (quality === 'mobile');
-    const RENDER_SECS_Q  = isMobileQuality ? 20 : 40;
-    const RENDER_FRAMES_Q = RENDER_FPS * RENDER_SECS_Q;
+    const RENDER_FRAMES_Q = RENDER_FPS * durationSecs;
+    const storageKey = engine + '_' + quality;
 
-    // Show render overlay, hide video screen UI
+    // Load existing segments + physics state
+    const existingSegs = await loadSegments(storageKey);
+    const savedPhysics = await loadPhysicsState(storageKey);
+    const segNum = existingSegs.length + 1;
+
+    // Show render overlay
     document.getElementById('video-screen').style.display = 'none';
     const ov = document.getElementById('render-overlay');
-    const qLabel = isMobileQuality ? '📱 MOBILE QUALITY' : '🖥 DESKTOP QUALITY';
+    const qLabel = isMobileQuality ? '📱 MOBILE' : '🖥 DESKTOP';
     const labels = { v1:'V1', v2:'V2', v3:'V3' };
     document.getElementById('render-engine-label').textContent =
-        (labels[engine]||engine).toUpperCase() + ' · ' + qLabel + ' · RENDERING';
+        (labels[engine]||engine).toUpperCase() + ' · ' + qLabel + ' · ' + durationSecs + 's';
+    const segEl = document.getElementById('render-seg-label');
+    if (segEl) segEl.textContent = savedPhysics
+        ? `SEGMENT ${segNum} · continuing from tick ${(savedPhysics.ticks||0).toLocaleString()}`
+        : `SEGMENT ${segNum} · fresh start`;
     document.getElementById('render-pct').textContent = '0%';
-    document.getElementById('render-detail').textContent = 'Initialising physics…';
+    document.getElementById('render-detail').textContent = savedPhysics ? 'Restoring physics state…' : 'Initialising physics…';
     document.getElementById('render-bar').style.width = '0%';
     ov.style.display = 'flex';
 
-    // Canvas size: mobile=854×480, desktop=1280×720
+    // Canvas setup
     const rc = document.getElementById('render-canvas');
     rc.width  = isMobileQuality ? 854  : 1280;
     rc.height = isMobileQuality ? 480  : 720;
     const rctx = rc.getContext('2d');
 
-    const rWorld = buildRenderWorld(engine, rc, rctx, isMobileQuality);
+    // Build world — pass saved physics as seed so it continues
+    const rWorld = buildRenderWorld(engine, rc, rctx, isMobileQuality, savedPhysics);
 
     const stream = rc.captureStream(RENDER_FPS);
     const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
@@ -2910,13 +3039,11 @@ async function renderNewVideo(engine, quality) {
     mr.start(Math.round(1000 / RENDER_FPS));
 
     let frameCount = 0;
-    // Mobile quality: 1 frame/batch to stay responsive; desktop: 3
     const BATCH = isMobileQuality ? 1 : 3;
 
     function renderBatch() {
         if (renderCancelled) {
             mr.stop(); ov.style.display = 'none';
-            // Reopen video screen
             document.getElementById('video-screen').style.display = 'flex';
             return;
         }
@@ -2929,31 +3056,31 @@ async function renderNewVideo(engine, quality) {
         document.getElementById('render-pct').textContent = pct + '%';
         document.getElementById('render-bar').style.width = pct + '%';
         document.getElementById('render-detail').textContent =
-            'Frame ' + frameCount + ' / ' + RENDER_FRAMES_Q +
-            '  ·  ' + (rWorld.ticks||0) + ' ticks' +
-            '  ·  chaos ' + (rWorld.chaos||0).toFixed(2);
+            `Frame ${frameCount} / ${RENDER_FRAMES_Q}  ·  tick ${(rWorld.ticks||0).toLocaleString()}  ·  chaos ${(rWorld.chaos||0).toFixed(2)}`;
 
         if (frameCount < RENDER_FRAMES_Q) {
             setTimeout(renderBatch, 0);
         } else {
-            document.getElementById('render-detail').textContent = 'Finalising…';
+            document.getElementById('render-detail').textContent = 'Saving segment…';
             mr.onstop = async () => {
-                const blob = new Blob(chunks, { type: 'video/webm' });
-                // Store separately per quality so both are available
-                const key = engine + '_' + quality;
-                try { await saveVideoBlob(key, blob); } catch(e) { console.warn('IDB save:', e); }
+                const segBlob = new Blob(chunks, { type: 'video/webm' });
+                // Save physics state for next segment
+                const physState = rWorld.getState();
+                try {
+                    await appendSegment(storageKey, segBlob, {
+                        frames: frameCount,
+                        ticks: rWorld.ticks,
+                        chaos: rWorld.chaos,
+                        quality,
+                        durationSecs,
+                        segNum
+                    });
+                    await savePhysicsState(storageKey, physState);
+                } catch(e) { console.warn('IDB save:', e); }
                 ov.style.display = 'none';
-                currentVideoBlob = blob;
-                const videoEl = document.getElementById('sim-video');
-                videoEl.src = URL.createObjectURL(blob);
-                videoEl.style.display = 'block';
-                document.getElementById('video-no-video').style.display = 'none';
-                const screen = document.getElementById('video-screen');
-                screen.style.display = 'flex';
-                const lbl = { v1:'V1 — Classic Engine', v2:'V2 — Deep Scan Engine', v3:'V3 — Playback Engine' };
-                document.getElementById('video-engine-label').textContent =
-                    (lbl[engine]||engine) + ' · ' + (isMobileQuality ? '📱' : '🖥');
-                videoEl.play();
+                // Load all segments and play as playlist
+                const allSegs = await loadSegments(storageKey);
+                playSegmentPlaylist(allSegs, engine, quality);
                 updateWatchBtnLabels(engine, 'ready');
             };
             mr.stop();
@@ -2966,13 +3093,85 @@ function cancelRender() {
     renderCancelled = true;
 }
 
+// ── Playlist player — plays all segments in sequence ──────────
+let playlistSegs = [];
+let playlistIdx  = 0;
+
+function playSegmentPlaylist(segs, engine, quality) {
+    if (!segs || segs.length === 0) return;
+    playlistSegs = segs;
+    playlistIdx  = 0;
+
+    const videoEl = document.getElementById('sim-video');
+    const screen  = document.getElementById('video-screen');
+    const noVid   = document.getElementById('video-no-video');
+
+    // Update segment counter in UI
+    updatePlaylistUI(segs, engine, quality);
+
+    videoEl.onended = () => {
+        playlistIdx++;
+        if (playlistIdx < playlistSegs.length) {
+            videoEl.src = URL.createObjectURL(playlistSegs[playlistIdx].blob);
+            videoEl.play();
+            updatePlaylistProgress();
+        } else {
+            // Loop back to start
+            playlistIdx = 0;
+            videoEl.src = URL.createObjectURL(playlistSegs[0].blob);
+            videoEl.play();
+            updatePlaylistProgress();
+        }
+    };
+
+    videoEl.src = URL.createObjectURL(segs[0].blob);
+    videoEl.style.display = 'block';
+    noVid.style.display = 'none';
+    screen.style.display = 'flex';
+
+    const lbl = { v1:'V1 — Classic Engine', v2:'V2 — Deep Scan Engine', v3:'V3 — Playback Engine' };
+    const totalSecs = segs.reduce((a,s)=>a+(s.durationSecs||0),0);
+    document.getElementById('video-engine-label').textContent =
+        (lbl[engine]||engine) + ` · ${segs.length} seg · ${totalSecs}s`;
+
+    videoEl.play();
+    currentVideoBlob = segs[0].blob;
+}
+
+function updatePlaylistProgress() {
+    const seg = playlistSegs[playlistIdx];
+    if (!seg) return;
+    const counterEl = document.getElementById('playlist-counter');
+    if (counterEl) counterEl.textContent =
+        `seg ${playlistIdx+1}/${playlistSegs.length}  ·  tick ${(seg.ticks||0).toLocaleString()}`;
+}
+
+function updatePlaylistUI(segs, engine, quality) {
+    const el = document.getElementById('playlist-info');
+    if (!el) return;
+    const totalSecs = segs.reduce((a,s)=>a+(s.durationSecs||0),0);
+    const totalTicks = segs.reduce((a,s)=>a+(s.ticks||0),0);
+    el.innerHTML = `<span style="color:#14b8a6;">${segs.length} segment${segs.length>1?'s':''}</span>`
+        + ` · ${totalSecs}s · ${totalTicks.toLocaleString()} ticks`;
+}
+
+async function clearAndReset(engine) {
+    if (!engine) return;
+    if (!confirm('Clear all segments and physics state for this engine? This cannot be undone.')) return;
+    const key = engine + '_' + (currentRenderQuality||'desktop');
+    await clearSegments(key);
+    await savePhysicsState(key, null);
+    refreshSegInfo(engine);
+    alert('Cleared. Next render starts fresh.');
+}
+
 // ══════════════════════════════════════════════════════
 // RENDER WORLD FACTORY
 // Builds a lightweight self-contained sim for offline
 // rendering — shares the same physics as each engine
 // but runs on the hidden 1280×720 canvas.
 // ══════════════════════════════════════════════════════
-function buildRenderWorld(engine, canvas, ctx, isMobileQuality) {
+function buildRenderWorld(engine, canvas, ctx, isMobileQuality, seedState) {
     const W = canvas.width, H = canvas.height;
     const CX = W/2, CY = H/2;
     const BS = Math.min(W,H)/800;  // baseScale
@@ -3010,6 +3209,29 @@ function buildRenderWorld(engine, canvas, ctx, isMobileQuality) {
     let lastInversionTime = -9999;
     let lastInversionData = null;
     let munkerOffset = 0;
+
+    // Restore from saved physics state if provided
+    if (seedState) {
+        try {
+            ticks      = seedState.ticks      || 0;
+            inversions = seedState.inversions  || 0;
+            chaos      = seedState.chaos       || 0;
+            geoIdx     = seedState.geoIdx      || 0;
+            geo        = GEOS[geoIdx];
+            geo.scale  = seedState.geoScale    || 1;
+            geoFrames  = seedState.geoFrames   || 0;
+            if (seedState.balls && seedState.balls.length === balls.length) {
+                seedState.balls.forEach((s, i) => {
+                    balls[i].x       = s.x;
+                    balls[i].y       = s.y;
+                    balls[i].vx      = s.vx;
+                    balls[i].vy      = s.vy;
+                    balls[i].winding = s.winding;
+                    balls[i].path    = (s.path||[]).map(p=>({x:p.x,y:p.y}));
+                });
+            }
+        } catch(e) { console.warn('seedState restore failed:', e); }
+    }
 
     function tick() {
         // Physics
@@ -3208,7 +3430,18 @@ function buildRenderWorld(engine, canvas, ctx, isMobileQuality) {
         ctx.restore();
     }
 
-    return { tick, draw, get ticks() { return ticks; }, get chaos() { return chaos; } };
+    function getState() {
+        return {
+            ticks, inversions, chaos,
+            geoIdx, geoScale: geo.scale, geoFrames,
+            balls: balls.map(b => ({
+                x: b.x, y: b.y, vx: b.vx, vy: b.vy,
+                winding: b.winding,
+                path: b.path.slice(-10) // save last 10 path points only
+            }))
+        };
+    }
+    return { tick, draw, getState, get ticks() { return ticks; }, get chaos() { return chaos; } };
 }
 </script>
 
