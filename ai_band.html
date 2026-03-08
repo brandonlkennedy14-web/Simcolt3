@@ -837,7 +837,7 @@ class AudioBus{
     const lfo2=ctx.createOscillator();const lg2=ctx.createGain();
     lfo1.frequency.value=0.55;lg1.gain.value=0.009;lfo1.connect(lg1);lg1.connect(this.chorusDelay.delayTime);
     lfo2.frequency.value=0.82;lg2.gain.value=0.007;lfo2.connect(lg2);lg2.connect(c2.delayTime);
-    lfo1.start();lfo2.start();
+    try{lfo1.start(0);lfo2.start(0);}catch(e){lfo1.start();lfo2.start();}
     this.chorusWet=ctx.createGain();this.chorusWet.gain.value=0;
     this.send.connect(this.chorusWet);
     this.chorusWet.connect(this.chorusDelay);this.chorusDelay.connect(masterGain);
@@ -1518,8 +1518,8 @@ function synthSubBass(ctx, t, note, chaos, warp, windBoost=0, beat=0){
 // Winding number history determines attack character, resonance, and envelope.
 // 4 synthesis modes selected by neural inference: pluck, slap, sustain, growl.
 
-function synthBass(ctx, t, note, chaos, warp, windBoost=0, inputChar=0.5, beat=0){
-  const dest=bus.getInput('bass'); if(!dest)return;
+function synthBass(ctx, t, note, chaos, warp, windBoost=0, inputChar=0.5, beat=0, destIn=null){
+  const dest=destIn||bus.getInput('bass'); if(!dest)return;
   const freq=440*Math.pow(2,(note-69)/12)*warp;
   const s=drumSeed();
   const pc=((note%12)+12)%12; const pcMod=pc/12;
@@ -2447,7 +2447,7 @@ function App(){
     let simGroove=ar._groove||bandTaste.pickArchetype();
     let simPhaseLabel=ar.structurePhase||'intro';
     const simVoices={drum:{w:0},bass:{w:0,last:null},mid:{w:0},lead:{w:0,last:null}};
-    const simMutes=mutesRef.current||{};
+    const simMutes={}; // offline sim always plays all voices
 
     for(let step=0;step<totalSteps;step++){
       const t=step*stepDur;
@@ -2487,6 +2487,12 @@ function App(){
         if(Math.random()<hP)            events.push({t,type:'hat',v:0.3+Math.random()*0.4,open:Math.random()<0.08});
       }
 
+      // Sub bass on downbeats
+      if(!simMutes.bass&&(beat===0||(beat===8&&Math.random()<0.75))){
+        const subPC=((simRoot)%12+12)%12;
+        let sn=24+subPC; while(sn<24)sn+=12; while(sn>36)sn-=12;
+        events.push({t,type:'sub',note:sn,chordType:simChordType});
+      }
       // Bass (simplified -- pitch class + register)
       if(!simMutes.bass&&(beat===0||beat===4||beat===8||beat===12||Math.random()<density*0.3)){
         const bassPC=((simRoot+choose('bass',[0,5,7],chaos,simChordType))%12+12)%12;
@@ -2547,7 +2553,8 @@ function App(){
         if(ev.type==='kick')   synthKick(offCtx,t,warp,offBus.getInput('drum'),0.5);
         if(ev.type==='snare')  synthSnare(offCtx,t,chaos,warp,offBus.getInput('drum'),0.5);
         if(ev.type==='hat')    synthHat(offCtx,t,ev.open||false,chaos,warp,offBus.getInput('drum'),0.3);
-        if(ev.type==='bass')   synthBass(offCtx,t,ev.note,chaos,warp,0.05,0.5,0);
+        if(ev.type==='sub')    synthSubBass(offCtx,t,ev.note,chaos,warp,0.05,0,offBus.getInput('sub'));
+        if(ev.type==='bass')   synthBass(offCtx,t,ev.note,chaos,warp,0.05,0.5,0,offBus.getInput('bass'));
         if(ev.type==='mid'&&ev.notes)
           synthMid(offCtx,t,ev.notes,ev.chordType,chaos,warp,offBus.getInput('mid'),0.05);
         if(ev.type==='lead')   synthLead(offCtx,t,ev.note,chaos,warp,offBus.getInput('lead'),0.05);
@@ -2621,6 +2628,14 @@ function App(){
       };
     }
     AR.current.nextNoteTime=AR.current.ctx.currentTime+0.08;
+    // Initialize structure fields
+    if(!AR.current.measuresPerChord) AR.current.measuresPerChord=4;
+    if(!AR.current.targetChordSeq||!AR.current.targetChordSeq.length){
+      AR.current.targetChordSeq=structureEngine.buildPhrase(
+        AR.current.chordType||'maj',AR.current.chaos||0.3,bandTaste.darkness,brain
+      );
+      AR.current.phrasePosition=0;
+    }
     scheduler();hap.tap();
     addLog('Band active.');
   };
@@ -2656,6 +2671,13 @@ function App(){
       ar.measureCount=(ar.measureCount||0)+1;
       flushBarQueue(); // Apply queued user inputs at bar boundary
       ar.measuresThisChord=(ar.measuresThisChord||0)+1;
+      // Motif phase: call(1-2) / response(3) / turnaround(4) within each phrase
+      ar._motifPhase = structureEngine.motifPhase(ar.measuresThisChord);
+      ar._motifShape = structureEngine.motifShape(ar._motifPhase);
+      // Turnaround: temporarily color notes with pivot chord without changing progression
+      // The structure engine still controls the real chord change timing
+      ar._turnaroundChord = (ar._motifPhase==='turnaround' && ar.measuresThisChord>1)
+        ? structureEngine.turnaroundChord(chordType) : null;
       // Evolve taste based on current energy
       const windingEnergy=voices.lead.winding*0.5+voices.mid.winding*0.3+voices.bass.winding*0.2;
       bandTaste.evolve(windingEnergy, chaos);
@@ -2677,18 +2699,18 @@ function App(){
         );
         ar.phrasePosition = 0;
         ar.measuresThisChord = 0;
-        ar.measuresPerChord = structureEngine.chordDuration(chaos, ar.structurePhase||'verse', brain.n);
+        ar.measuresPerChord = Math.max(1, structureEngine.chordDuration(chaos, ar.structurePhase||'verse', brain.n));
         ar.structurePhase = structureEngine.advanceSection(Math.floor(ar.measureCount/4));
       }
       // Change chord when we've played enough measures on this one
-      if(ar.measuresThisChord >= ar.measuresPerChord){
+      if(ar.measuresThisChord >= (ar.measuresPerChord||4)){
         ar.phrasePosition = ((ar.phrasePosition||0)+1) % ar.targetChordSeq.length;
         const nextC = ar.targetChordSeq[ar.phrasePosition];
         if(nextC && CHORDS[nextC]){
           ar.chordType = nextC; setCChord(nextC);
         }
         ar.measuresThisChord = 0;
-        ar.measuresPerChord = structureEngine.chordDuration(chaos, ar.structurePhase||'verse', brain.n);
+        ar.measuresPerChord = Math.max(1, structureEngine.chordDuration(chaos, ar.structurePhase||'verse', brain.n));
         // When we complete a phrase (position wraps to 0), build a new one
         if(ar.phrasePosition===0){
           ar.targetChordSeq = structureEngine.buildPhrase(
@@ -2796,9 +2818,11 @@ function App(){
     }
 
     // -- EXCLUSION PRINCIPLE -----------------------------------------------
-    const ct=CHORDS[chordType]||CHORDS.maj;
+    // Apply turnaround coloring if active (doesn't change progression, just note choices)
+    const effectiveChord = ar._turnaroundChord||chordType;
+    const ct=CHORDS[effectiveChord]||CHORDS.maj;
     const bassAsserts=voices.bass.winding>voices.mid.winding;
-    const bassOpts=sup.bass||mutes.bass?[]:[0,7,5,ct.iv[1]||4];
+    const bassOpts=sup.bass||mutes.bass?[]:[0,7,5,ct.iv[1]||4]; // ct = effectiveChord
     const midOpts =sup.mid ||mutes.mid ?[]:(bassAsserts?ct.iv.slice(2).map(v=>v+7):ct.iv);
     // Mid notes clamped to C3-C6 register
     const midBase=rootMidi>72?(rootMidi-12):rootMidi<48?(rootMidi+12):rootMidi;
@@ -2812,7 +2836,7 @@ function App(){
     // Sub owns downbeat (beat 0) and the half-note (beat 8 in 4/4).
     // Bass fills offbeats and syncopations. They share winding memory.
     if(!sup.bass&&!mutes.bass&&bassOpts.length){
-      const iv=brain.choose(userRole,bassOpts,chaos,chordType);
+      const iv=brain.choose(userRole,bassOpts,chaos,effectiveChord);
       // Force bass into bass register: E1-E3 (28-52)
       // Take root pitch class + iv, find correct octave
       const bassPC=((rootMidi+iv)%12+12)%12;
@@ -2859,10 +2883,10 @@ function App(){
 
     // -- LEAD -------------------------------------------------------------
     if(!sup.lead&&!mutes.lead&&leadOpts.length){
-      const motifShape=AR.current._motifShape||{densityMod:1,chaosMod:1,leadMod:1};
+      const motifShape=ar._motifShape||{densityMod:1,chaosMod:1,leadMod:1};
       const prob=density*motifShape.leadMod*(hist.l?0.14:1.6)*0.65*(DeviceComp.score<0.4?0.5:1.0);
       if(Math.random()<prob){
-        let iv=brain.choose(userRole,leadOpts,chaos,chordType);
+        let iv=brain.choose(userRole,leadOpts,chaos,effectiveChord);
         // Melodic direction: bias toward stepwise motion (like a real musician)
         // 60% of time, prefer notes close to the last note played
         if(voices.lead.lastNote!=null && Math.random()<0.6){
